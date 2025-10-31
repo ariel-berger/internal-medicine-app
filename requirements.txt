@@ -1,0 +1,27 @@
+# Core web framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# Database and ORM
+sqlalchemy>=2.0.25
+flask-sqlalchemy==3.1.1
+
+# Authentication
+flask-jwt-extended==4.6.0
+
+# Environment management
+python-dotenv==1.0.0
+
+# Development
+flask-migrate==4.0.5
+
+# Production server
+gunicorn==21.2.0
+
+# Medical articles library (editable install)
+# Commented out for deployment - uncomment and adjust path for local development
+# -e /Users/Ariel.Berger/Projects/medical_articles_lib
+ 
+# Google Sign-In verification
+google-auth==2.35.0
+requests>=2.31.0
