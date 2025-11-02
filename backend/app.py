@@ -82,7 +82,7 @@ class User(db.Model):
     full_name = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     # optional role
-    # role = db.Column(db.String(50), default='user')
+    role = db.Column(db.String(50), default='user')
 
     def to_dict(self):
         return {
@@ -990,10 +990,68 @@ def get_users():
     except Exception as e:
         return jsonify({'error': f'Failed to get users: {str(e)}'}), 500
 
+@app.route('/api/admin/users/promote', methods=['POST'])
+@jwt_required()
+def promote_user_to_admin():
+    """Promote a user to admin (admin only). Body: { email }"""
+    try:
+        current_user_id = int(get_jwt_identity())
+        current_user = User.query.get(current_user_id)
+        if not current_user or current_user.role != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        data = request.get_json() or {}
+        email = data.get('email')
+        if not email:
+            return jsonify({'error': 'email is required'}), 400
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        user.role = 'admin'
+        db.session.commit()
+        return jsonify({'message': 'User promoted', 'user': user.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to promote: {str(e)}'}), 500
+
+@app.route('/api/admin/users/demote', methods=['POST'])
+@jwt_required()
+def demote_user_from_admin():
+    """Demote an admin back to user (admin only). Body: { email }"""
+    try:
+        current_user_id = int(get_jwt_identity())
+        current_user = User.query.get(current_user_id)
+        if not current_user or current_user.role != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        data = request.get_json() or {}
+        email = data.get('email')
+        if not email:
+            return jsonify({'error': 'email is required'}), 400
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        user.role = 'user'
+        db.session.commit()
+        return jsonify({'message': 'User demoted', 'user': user.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to demote: {str(e)}'}), 500
+
 # Ensure database tables exist at import time for production servers (gunicorn)
 try:
     with app.app_context():
         db.create_all()
+        # Ensure role column (SQLite) and optional auto-admin promotion
+        try:
+            db.session.execute("ALTER TABLE user ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        admin_email = os.getenv('ADMIN_EMAIL')
+        if admin_email:
+            u = User.query.filter_by(email=admin_email).first()
+            if u and u.role != 'admin':
+                u.role = 'admin'
+                db.session.commit()
 except Exception as e:
     print(f"Warning: database initialization failed at import time: {e}")
 
