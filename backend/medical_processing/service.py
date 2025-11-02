@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from .data_collection.pubmed_client import PubMedClient
-from .classification.classifier import classify_articles_batch
+# Lazy import classification to avoid hard dependency at startup on optional AI SDKs
 from .database.operations import batch_insert_articles
 from .database.schema import create_database, migrate_database
 from .config import JOURNALS
@@ -97,9 +97,9 @@ class MedicalArticlesService:
                     'message': 'No articles to classify'
                 }
             
-            # Initialize classifier if needed
+            # Initialize classifier if needed (lazy import to avoid startup errors)
+            from .classification.classifier import MedicalArticleClassifier, classify_articles_batch
             if not self.classifier or self.classifier.model_provider != model_provider:
-                from .classification.classifier import MedicalArticleClassifier
                 self.classifier = MedicalArticleClassifier(model_provider=model_provider)
             
             # Classify articles
