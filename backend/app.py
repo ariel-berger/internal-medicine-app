@@ -179,37 +179,39 @@ def health_check():
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     """User registration"""
-    data = request.get_json()
-    
-    if not data or not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Email and password are required'}), 400
-    
-    # Check if user already exists
-    if User.query.filter_by(email=data['email']).first():
-        return jsonify({'error': 'User already exists'}), 400
-    
-    # Create new user with hashed password
-    user = User(
-        email=data['email'],
-        password_hash=generate_password_hash(data['password']),
-        full_name=data.get('fullName', '')
-    )
-    
-    db.session.add(user)
-    db.session.commit()
-    
-    # Create access token with string identity
-    access_token = create_access_token(identity=str(user.id))
-    
-    return jsonify({
-        'message': 'User created successfully',
-        'token': access_token,
-        'user': {
-            'id': user.id,
-            'email': user.email,
-            'fullName': user.full_name
-        }
-    })
+    try:
+        data = request.get_json() or {}
+        if not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        # Check if user already exists
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({'error': 'User already exists'}), 400
+        
+        # Create new user with hashed password
+        user = User(
+            email=data['email'],
+            password_hash=generate_password_hash(data['password']),
+            full_name=data.get('fullName', '')
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            'message': 'User created successfully',
+            'token': access_token,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'fullName': user.full_name
+            }
+        })
+    except Exception as e:
+        # Log server-side and return sanitized error
+        print(f"/api/auth/register failed: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Registration failed'}), 500
 
 @app.route('/api/auth/google', methods=['POST'])
 def google_login():
@@ -254,27 +256,28 @@ def google_login():
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     """User login"""
-    data = request.get_json()
-    
-    if not data or not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Email and password are required'}), 400
-    
-    user = User.query.filter_by(email=data['email']).first()
-    
-    if not user or not check_password_hash(user.password_hash, data['password']):
-        return jsonify({'error': 'Invalid credentials'}), 401
-    
-    access_token = create_access_token(identity=str(user.id))
-    
-    return jsonify({
-        'message': 'Login successful',
-        'token': access_token,
-        'user': {
-            'id': user.id,
-            'email': user.email,
-            'fullName': user.full_name
-        }
-    })
+    try:
+        data = request.get_json() or {}
+        if not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Email and password are required'}), 400
+        
+        user = User.query.filter_by(email=data['email']).first()
+        if not user or not check_password_hash(user.password_hash, data['password']):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            'message': 'Login successful',
+            'token': access_token,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'fullName': user.full_name
+            }
+        })
+    except Exception as e:
+        print(f"/api/auth/login failed: {e}")
+        return jsonify({'error': 'Login failed'}), 500
 
 @app.route('/api/auth/me', methods=['GET'])
 @jwt_required()
