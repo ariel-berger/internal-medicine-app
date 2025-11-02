@@ -12,16 +12,9 @@ export default defineConfig({
     allowedHosts: true
   },
   resolve: {
-    alias: [
-      {
-        find: '@/lib/utils',
-        replacement: path.resolve(__dirname, './src/lib/utils.js'),
-      },
-      {
-        find: '@',
-        replacement: path.resolve(__dirname, './src'),
-      },
-    ],
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.json'],
   },
   optimizeDeps: {
