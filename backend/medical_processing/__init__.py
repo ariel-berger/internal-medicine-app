@@ -8,21 +8,7 @@ This module provides functionality for:
 - Weekly automated processing
 """
 
-from .data_collection.pubmed_client import PubMedClient
-from .classification.classifier import MedicalArticleClassifier, classify_articles_batch
-from .database.operations import batch_insert_articles, get_connection
-from .database.schema import create_database, migrate_database
-from .config import JOURNALS, MEDICAL_CATEGORIES, ARTICLE_TYPES
+# Keep package init light to avoid importing heavy/optional deps (e.g., AI SDKs) at startup
+# Consumers should import symbols directly from submodules when needed.
 
-__all__ = [
-    'PubMedClient',
-    'MedicalArticleClassifier', 
-    'classify_articles_batch',
-    'batch_insert_articles',
-    'get_connection',
-    'create_database',
-    'migrate_database',
-    'JOURNALS',
-    'MEDICAL_CATEGORIES', 
-    'ARTICLE_TYPES'
-]
+__all__ = []
