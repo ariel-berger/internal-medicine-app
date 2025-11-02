@@ -12,6 +12,8 @@ import { useEffect, useRef } from 'react';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [isRegister, setIsRegister] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -52,10 +54,14 @@ export default function Login() {
     setError('');
 
     try {
-      await User.login(email, password);
+      if (isRegister) {
+        await User.register(email, password, fullName || email.split('@')[0]);
+      } else {
+        await User.login(email, password);
+      }
       navigate('/dashboard');
     } catch (error) {
-      setError(error.message || 'Login failed. Please check your credentials.');
+      setError(error.message || (isRegister ? 'Registration failed.' : 'Login failed. Please check your credentials.'));
     } finally {
       setIsLoading(false);
     }
@@ -109,6 +115,24 @@ export default function Login() {
                 </Alert>
               )}
 
+              {isRegister && (
+                <div>
+                  <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
+                    Full name
+                  </label>
+                  <Input
+                    id="fullName"
+                    name="fullName"
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="mt-1"
+                    placeholder="Enter your full name"
+                  />
+                </div>
+              )}
+
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                   Email address
@@ -154,9 +178,20 @@ export default function Login() {
                     Signing in...
                   </>
                 ) : (
-                  'Sign in'
+                  (isRegister ? 'Create account' : 'Sign in')
                 )}
               </Button>
+              <div className="text-center text-sm text-gray-600 mt-2">
+                {isRegister ? (
+                  <button type="button" className="underline" onClick={() => setIsRegister(false)} disabled={isLoading}>
+                    Already have an account? Sign in
+                  </button>
+                ) : (
+                  <button type="button" className="underline" onClick={() => setIsRegister(true)} disabled={isLoading}>
+                    New here? Create an account
+                  </button>
+                )}
+              </div>
             </form>
 
             <div className="mt-6">
