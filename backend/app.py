@@ -43,6 +43,16 @@ else:
 
 # (moved db.create_all to the end of the file, after models are defined)
 
+# Admin allowlist (comma-separated emails). If not set, falls back to single ADMIN_EMAIL
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv('ADMIN_EMAILS', os.getenv('ADMIN_EMAIL', '')).split(',')
+    if e and e.strip()
+}
+
+def is_admin_email(email: str) -> bool:
+    return bool(email) and email.strip().lower() in ADMIN_EMAILS
+
 # Import medical articles processing service
 try:
     from medical_processing.service import medical_articles_service
@@ -187,7 +197,8 @@ def register():
         user = User(
             email=data['email'],
             password_hash=generate_password_hash(data['password']),
-            full_name=data.get('fullName', '')
+            full_name=data.get('fullName', ''),
+            role='admin' if is_admin_email(data['email']) else 'user'
         )
         db.session.add(user)
         db.session.commit()
@@ -235,9 +246,20 @@ def google_login():
 
         user: Optional[User] = User.query.filter_by(email=email).first()
         if not user:
-            user = User(email=email, password_hash='google-oauth', full_name=full_name)
+            user = User(
+                email=email,
+                password_hash='google-oauth',
+                full_name=full_name,
+                role='admin' if is_admin_email(email) else 'user',
+            )
             db.session.add(user)
             db.session.commit()
+        else:
+            # Sync role with allowlist policy
+            desired_role = 'admin' if is_admin_email(email) else 'user'
+            if user.role != desired_role:
+                user.role = desired_role
+                db.session.commit()
 
         access_token = create_access_token(identity=str(user.id))
         return jsonify({
@@ -259,6 +281,11 @@ def login():
         user = User.query.filter_by(email=data['email']).first()
         if not user or not check_password_hash(user.password_hash, data['password']):
             return jsonify({'error': 'Invalid credentials'}), 401
+        # Optionally sync role with allowlist on login
+        desired_role = 'admin' if is_admin_email(user.email) else 'user'
+        if user.role != desired_role:
+            user.role = desired_role
+            db.session.commit()
         
         access_token = create_access_token(identity=str(user.id))
         return jsonify({
@@ -1046,12 +1073,12 @@ try:
             db.session.commit()
         except Exception:
             db.session.rollback()
-        admin_email = os.getenv('ADMIN_EMAIL')
-        if admin_email:
-            u = User.query.filter_by(email=admin_email).first()
-            if u and u.role != 'admin':
-                u.role = 'admin'
-                db.session.commit()
+        if ADMIN_EMAILS:
+            for admin_email in ADMIN_EMAILS:
+                u = User.query.filter_by(email=admin_email).first()
+                if u and u.role != 'admin':
+                    u.role = 'admin'
+                    db.session.commit()
 except Exception as e:
     print(f"Warning: database initialization failed at import time: {e}")
 
