@@ -39,6 +39,8 @@ venv/
 ENV/
 env/
 .venv
+# Keep frontend source lib directory tracked
+!src/lib/**
 
 # Database files
 *.db
