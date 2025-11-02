@@ -41,12 +41,7 @@ if os.getenv('FLASK_ENV') == 'production':
 else:
     CORS(app)  # Allow all origins in development
 
-# Ensure database tables exist (safe no-op if already created)
-try:
-    with app.app_context():
-        db.create_all()
-except Exception as e:
-    print(f"Warning: database initialization failed: {e}")
+# (moved db.create_all to the end of the file, after models are defined)
 
 # Import medical articles processing service
 try:
@@ -994,6 +989,13 @@ def get_users():
         
     except Exception as e:
         return jsonify({'error': f'Failed to get users: {str(e)}'}), 500
+
+# Ensure database tables exist at import time for production servers (gunicorn)
+try:
+    with app.app_context():
+        db.create_all()
+except Exception as e:
+    print(f"Warning: database initialization failed at import time: {e}")
 
 if __name__ == '__main__':
     with app.app_context():
