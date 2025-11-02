@@ -41,6 +41,13 @@ if os.getenv('FLASK_ENV') == 'production':
 else:
     CORS(app)  # Allow all origins in development
 
+# Ensure database tables exist (safe no-op if already created)
+try:
+    with app.app_context():
+        db.create_all()
+except Exception as e:
+    print(f"Warning: database initialization failed: {e}")
+
 # Import medical articles processing service
 try:
     from medical_processing.service import medical_articles_service

@@ -67,3 +67,6 @@ instance/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Keep backend medical articles DB tracked if present (read-only data)
+!backend/medical_articles.db
