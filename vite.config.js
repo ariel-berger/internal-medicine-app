@@ -12,15 +12,29 @@ export default defineConfig({
     allowedHosts: true
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-    extensions: ['.mjs', '.js', '.jsx', '.ts', '.tsx', '.json']
+    alias: [
+      {
+        find: '@/lib/utils',
+        replacement: path.resolve(__dirname, './src/lib/utils.js'),
+      },
+      {
+        find: '@',
+        replacement: path.resolve(__dirname, './src'),
+      },
+    ],
+    extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.json'],
   },
   optimizeDeps: {
     esbuildOptions: {
       loader: {
         '.js': 'jsx',
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
       },
     },
   },
