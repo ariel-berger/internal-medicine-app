@@ -67,23 +67,6 @@ export default function Login() {
     }
   };
 
-  const handleDemoLogin = async (role) => {
-    setIsLoading(true);
-    setError('');
-
-    try {
-      if (role === 'admin') {
-        await User.login('admin@example.com', 'admin');
-      } else {
-        await User.login('doctor@example.com', 'doctor');
-      }
-      navigate('/dashboard');
-    } catch (error) {
-      setError(error.message || 'Demo login failed.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -196,33 +179,6 @@ export default function Login() {
 
             <div className="mt-6">
               <div ref={googleButtonRef} className="flex justify-center mb-4" />
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">Demo Accounts</span>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleDemoLogin('admin')}
-                  disabled={isLoading}
-                >
-                  Demo Admin Login
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleDemoLogin('user')}
-                  disabled={isLoading}
-                >
-                  Demo Doctor Login
-                </Button>
-              </div>
             </div>
           </CardContent>
         </Card>
