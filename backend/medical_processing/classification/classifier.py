@@ -227,11 +227,12 @@ Reject immediately if the article has any of the following:
 - Organ transplant or bone marrow transplant patients → "Transplant focus"
 - Lifestyle interventions (diet, nutrition, exercise, weight-loss programs) → "Lifestyle intervention focus"
 - Studies on care bundles → "Care bundle study"
-- Commentary of existing guidelines → "Guideline commentary"
+- Publication of new guidelines → "New guidelines"
+
 
 STEP 1.5: PROCEDURE CHECK
 If the article discusses a procedure, surgical intervention, catheterization, or device-based therapy (e.g., endoscopy, stent, catheter, ablation, valve, biopsy, bronchoscopy, intubation, dialysis, endoscopic ultrasound, etc.):
-- Evaluate it *only* under STEP 2 rule 7 (Procedures for treatment)
+- Evaluate it *only* under STEP 2 rule 6 (Procedures for treatment)
 - Do NOT include it under rule 1 (RCTs) or rule 5 (Reviews), even if it is an RCT or a review.
 
 STEP 2: INCLUSION CRITERIA (Check if at least one applies)
@@ -295,145 +296,7 @@ For REJECTED article:
 """
         return prompt
 
-    def create_classification_prompt(self, title: str, abstract: str, 
-                                   mesh_terms: str, publication_type: str, journal_name: str = None) -> str:
-        """Create a prompt for Claude to classify, rank, and summarize relevant articles."""
-        
-        categories_list = "\n".join([f"- {cat}" for cat in self.medical_categories])
-        
-        # Handle journal info display
-        journal_display = journal_name if journal_name else "Not specified"
-        
-        prompt = f"""
-You are an expert AI medical research analyst. Your task is to classify, rank, and summarize a PubMed article that has already been determined to be relevant for a dashboard for internal medicine doctors in Israel.
-Analyze the provided article information and extract key information in a structured JSON format. Your final output must be only the JSON object, with no introductory or concluding text.
-
-**Input:**
-Title: {title}
-Abstract: {abstract}
-MeSH Terms: {mesh_terms}
-Publication Type: {publication_type}
-Journal: {journal_display}
-
-**Output Schema (JSON):**
-{{
-    "participants": "number | null",
-    "medical_category": "string ({categories_list})",
-    "clinical_bottom_line": "string (A 1-2 sentence summary for a busy clinician.)",
-    "tags": ["string"],
-    "ranking_score": "number (0-11)",
-    "ranking_breakdown": {{
-        "focus_points": "number (0-2)",
-        "type_points": "number (0-2)", 
-        "prevalence_points": "number (-1 to 2)",
-        "hospitalization_points": "number (0-2)",
-        "clinical_outcome_points": "number (0-1)",
-        "impact_factor_points": "number (0-1)",
-        "temporality_points": "number (-1 to 1)",
-        "prevention_penalty_points": "number (0 or -1)",
-        "biologic_penalty_points": "number (0 or -1)",
-        "screening_penalty_points": "number (0 or -2)",
-        "scores_penalty_points": "number (0 or -2)",
-        "subanalysis_penalty_points": "number (0 or -1)"
-    }}
-}}
-
-**Analysis Instructions:**
-
-***Step 1: Medical Category Classification***
-Classify the article into the most relevant medical field category for an internal medicine ward based on the provided text.
-
-***Step 2: Ranking System***
-Calculate ranking_score (0-11) based on the following criteria:
-
-**Focus of Paper (0-2 points):**
-- 2 points: Intervention studies (treatments, medications, procedures)
-- 1 point: Diagnostic tests, screening, or diagnostic procedures
-- 0 points: Other focus areas
-
-**Type of Paper (0-2 points):**
-- 2 points: Randomized Controlled Trial (RCT)
-- 1 point: Meta-analysis or systematic review
-- 0 points: Other study types
-
-**Disease Prevalence (-1 or 1 or 2 points):**
-- 2 points: Very common disease (>10% of population, >1,000 per 100,000 people per year)
-  Examples: hypertension, diabetes, heart failure, COPD, pneumonia, sepsis
-- 1 point: Medium common disease (1-10% of population, 100-1,000 per 100,000 people per year)
-  Examples: stroke, myocardial infarction, pancreatitis, DKA, atrial fibrillation
-- -1 points: Rare diseases (<1% of population, <100 per 100,000 people per year)
-
-**Hospitalization Relevance (0 or 2 points):**
-- 2 points: The study is clearly relevant to acute or hospitalized settings, identified either by containing key terms (acute, exacerbation, hospitalized, inpatient, ward, severe, failure, crisis, admitted, in-hospital, emergent, urgent, emergenc, fulminant) or by describing inpatient/ICU/ward management.
-- 0 points: The study does not include these key terms or it explicitly relates to ambulatory or outpatient care.
-
-**Clinical Outcome (0-1 point):**
-- 1 point: Studies with a clinical outcome as the primary outcome (clinical events such as death, symptoms, quality of life, exacerbations, hospitalizations)
-- 0 points: Studies with non-clinical primary outcome (lab parameters, imaging studies, biomarkers, surrogate endpoints)
-
-**Impact Factor (0-1 point):**
-- 1 point: Journal impact factor > 10 (high-impact journals like NEJM, Lancet, JAMA, etc.)
-- 0 points: Journal impact factor ≤ 10 or unknown
-
-**Temporality of Disease (-1 to 1 points):**
-- 1 point: Acute disease (sudden onset, short duration, requires immediate treatment)
-  Examples: acute myocardial infarction, acute stroke, sepsis, acute kidney injury, acute pancreatitis
-- -1 points: Chronic disease (long-term, persistent, ongoing management)
-  Examples: diabetes, hypertension, heart failure, COPD, chronic kidney disease
-- 0 points: Chronicity cannot be determined or mixed acute/chronic focus
-
-**Prevention/Prophylaxis Penalty (0 or -1 points):**
-- -1 point: Primary focus on prevention or prophylaxis of disease
-- 0 points: Not primarily focused on prevention/prophylaxis
-
-**Biologic Treatments Penalty (0 or -1 points):**
-- -1 point: Primary focus on biologic treatments (e.g., monoclonal antibodies, biologics)
-- 0 points: Not primarily focused on biologic treatments
-
-**Screening Tests Penalty (0 or -2 points):**
-- -2 points: Primary focus on screening tests or screening programs
-- 0 points: Not focused on screening
-
-**Clinical Scores Penalty (0 or -2 points):**
-- -2 points: Primary focus on clinical scores, risk scores, or scoring systems
-- 0 points: Not focused on scores
-
-**Subanalysis Penalty (0 or -1 point):**
-- -1 point: Article is a subanalysis or secondary analysis of a previous study
-- 0 points: Not a subanalysis
-
-**Total Score Calculation:**
-ranking_score = focus_points + type_points + prevalence_points + hospitalization_points + clinical_outcome_points + impact_factor_points + temporality_points + prevention_penalty_points + biologic_penalty_points + screening_penalty_points + scores_penalty_points + subanalysis_penalty_points
-
-***Step 3: Summary and Tagging***
-* clinical_bottom_line: Write a 2-3 sentence, evidence-based summary for a busy doctor. Base this ONLY on conclusions explicitly stated in the abstract. Include: (1) Study design and key participant characteristics, (2) Main outcome measured, (3) Key findings/conclusions from the abstract. Do NOT extrapolate, infer, or add clinical recommendations not explicitly stated in the abstract. If important inclusion/exclusion criteria are mentioned, include them briefly.
-* tags: Generate an array of relevant tags. Include "practice-changing", "guideline", or "popular-article" if applicable based on your analysis.
-* participants: Analyze the provided abstract and other text to find the number of participants in the study. If this information is not mentioned in the text, use null.
-
-**Example Output:**
-{{
-    "participants": 1250,
-    "medical_category": "Cardiology",
-    "clinical_bottom_line": "This randomized controlled trial of 1,250 patients with acute coronary syndrome compared early statin initiation (within 24 hours) versus delayed initiation (after 7 days). The primary outcome was 30-day mortality, which was 8.2% in the early group versus 10.9% in the delayed group (p=0.03). The study concluded that early statin therapy significantly reduced 30-day mortality in ACS patients.",
-    "tags": ["practice-changing", "cardiology", "statins", "acute-coronary-syndrome"],
-    "ranking_score": 8,
-    "ranking_breakdown": {{
-        "focus_points": 2,
-        "type_points": 2,
-        "prevalence_points": 2,
-        "hospitalization_points": 2,
-        "clinical_outcome_points": 1,
-        "impact_factor_points": 1,
-        "temporality_points": 1,
-        "prevention_penalty_points": 0,
-        "biologic_penalty_points": 0,
-        "screening_penalty_points": 0,
-        "scores_penalty_points": 0,
-        "subanalysis_penalty_points": 0
-    }}
-}}
-"""
-        return prompt
+    
     
     def parse_filtering_response(self, response: str) -> Dict:
         """Parse Claude's filtering response and return relevance data."""
@@ -674,7 +537,7 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
         if not title and not abstract:
             return self._get_default_enhanced_response()
         
-        prompt = self.create_classification_prompt(title, abstract, mesh_terms, 
+        prompt = self.create_inclusion_based_filtering_prompt(title, abstract, mesh_terms, 
                                                  publication_type, journal_name)
         
         logger.info(f"Classifying relevant article: {title[:50]}... (Journal: {journal_name})")
