@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from "react";
 import { Study } from "@/api/entities";
-import { Comment } from "@/api/entities";
 import { User } from "@/api/entities";
 import { InvokeLLM } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +15,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 export default function AdminDashboard() {
   const [currentUser, setCurrentUser] = useState(null);
   const [studies, setStudies] = useState([]);
-  const [comments, setComments] = useState([]);
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [analytics, setAnalytics] = useState({});
@@ -28,10 +26,9 @@ export default function AdminDashboard() {
 
   const loadData = async () => {
     try {
-      const [currentUserData, studiesData, commentsData, usersData] = await Promise.all([
+      const [currentUserData, studiesData, usersData] = await Promise.all([
         User.me(),
         Study.list(), // Reverted to standard call
-        Comment.list("-created_date"),
         User.list()
       ]);
 
@@ -44,11 +41,10 @@ export default function AdminDashboard() {
 
       setCurrentUser(currentUserData);
       setStudies(studiesData);
-      setComments(commentsData);
       setUsers(usersData);
 
       // Calculate analytics
-      calculateAnalytics(studiesData, commentsData, usersData);
+      calculateAnalytics(studiesData, [], usersData);
 
       // Calculate high yield studies
       if (studiesData.length > 0) {

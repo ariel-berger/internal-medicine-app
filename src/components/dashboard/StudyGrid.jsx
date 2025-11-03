@@ -3,7 +3,7 @@ import React from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import StudyCard from "./StudyCard";
 
-export default function StudyGrid({ studies, isLoading, users, statusMap, onStatusChange, onStudyUpdate, onCommentAdded, commentCounts }) {
+export default function StudyGrid({ studies, isLoading, users, statusMap, onStatusChange, onStudyUpdate }) {
   if (isLoading) {
     return (
       <div className="grid gap-6">
@@ -52,8 +52,6 @@ export default function StudyGrid({ studies, isLoading, users, statusMap, onStat
           statusRecord={statusMap?.get(study.id)}
           onStatusChange={onStatusChange}
           onStudyUpdate={onStudyUpdate}
-          onCommentAdded={onCommentAdded}
-          commentCount={commentCounts?.[study.id] || 0}
         />
       ))}
     </div>

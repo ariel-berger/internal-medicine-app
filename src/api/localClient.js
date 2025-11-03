@@ -113,6 +113,7 @@ class LocalAPIClient {
     if (params.limit) queryParams.append('limit', params.limit);
     if (params.offset) queryParams.append('offset', params.offset);
     if (params.sort) queryParams.append('sort', params.sort);
+    if (params.excludeHidden !== undefined) queryParams.append('exclude_hidden', params.excludeHidden ? 'true' : 'false');
     
     const endpoint = `/medical-articles/relevant${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
     return this.get(endpoint);
@@ -133,6 +134,14 @@ class LocalAPIClient {
     if (params.offset) queryParams.append('offset', params.offset);
     
     return this.get(`/medical-articles/search?${queryParams.toString()}`);
+  }
+
+  async setMedicalArticleKey(articleId, isKey) {
+    return this.put(`/medical-articles/${articleId}/key`, { is_key_study: !!isKey });
+  }
+
+  async setMedicalArticleHiddenFromDashboard(articleId, isHidden) {
+    return this.put(`/medical-articles/${articleId}/hide-dashboard`, { hidden_from_dashboard: !!isHidden });
   }
 }
 

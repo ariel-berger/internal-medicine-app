@@ -51,12 +51,13 @@ export default function Dashboard() {
         console.log("User not logged in, continuing without user data");
       }
       
-      // Load medical articles (all relevant articles by ranking score)
+      // Load medical articles (all relevant articles by ranking score, excluding hidden ones for dashboard)
       console.log("Loading medical articles...");
       try {
         const medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
           limit: 50, 
-          sort: 'ranking_score' 
+          sort: 'ranking_score',
+          excludeHidden: true  // Exclude hidden articles from dashboard
         });
         console.log("Loaded medical articles:", medicalArticlesData.length);
         console.log("First article sample:", medicalArticlesData[0]);

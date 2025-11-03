@@ -10,13 +10,12 @@ import {
   Bookmark, Library, Trash2, Book, CheckCircle, EyeOff, Eye
 } from "lucide-react";
 import { format } from "date-fns";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Comment } from "@/api/entities";
 import { UserStudyStatus } from "@/api/entities";
 import { Skeleton } from '@/components/ui/skeleton';
 import { User as UserEntity } from '@/api/entities'; // Renamed to avoid conflict with lucide-react User
 import { Study } from '@/api/entities';
+import { MedicalArticle } from '@/api/medicalArticles';
 import { setStatus as setArticleStatus } from '@/api/articleStatuses';
 import { formatAbstract } from '@/utils/formatAbstract.jsx';
 
@@ -131,13 +130,9 @@ function ReadingStatusManager({ study, statusRecord, onStatusChange }) {
 }
 
 
-export default function StudyCard({ study, creator, statusRecord, onStatusChange, onStudyUpdate, onCommentAdded, commentCount }) {
+export default function StudyCard({ study, creator, statusRecord, onStatusChange, onStudyUpdate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false); // New state for collapsing
-  const [comments, setComments] = useState([]);
-  const [newComment, setNewComment] = useState("");
-  const [isCommentsLoading, setIsCommentsLoading] = useState(false);
-  const [hasLoadedComments, setHasLoadedComments] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
 
@@ -153,39 +148,7 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
     fetchUser();
   }, []);
 
-  const loadComments = async () => {
-    if (hasLoadedComments) return;
-
-    setIsCommentsLoading(true);
-    try {
-      const fetchedComments = await Comment.filter({ study_id: study.id }, '-created_date');
-      setComments(fetchedComments);
-      setHasLoadedComments(true);
-    } catch (error) {
-      console.error('Error loading comments:', error);
-    }
-    setIsCommentsLoading(false);
-  };
-
-  const handlePostComment = async (e) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
-
-    try {
-      await Comment.create({
-        content: newComment,
-        study_id: study.id,
-      });
-      setNewComment("");
-      if (onCommentAdded) {
-        onCommentAdded(study.id);
-      }
-      setHasLoadedComments(false); // Invalidate cache to force reload
-      await loadComments();
-    } catch (error) {
-      console.error('Error posting comment:', error);
-    }
-  };
+  // Discussion removed
 
   const handleToggleImportant = async () => {
     if (!onStudyUpdate) return; // Guard against pages that don't support this
@@ -193,12 +156,13 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
     setIsUpdatingImportance(true);
     try {
         const updatedImportantStatus = !study.is_important_to_read;
-        await Study.update(study.id, { is_important_to_read: updatedImportantStatus });
-        
-        // Create a new study object with the updated importance status
-        // and pass it to the onStudyUpdate callback
+        if (study.isMedicalArticle) {
+          await MedicalArticle.setKeyStudy(study.id, updatedImportantStatus);
+        } else {
+          await Study.update(study.id, { is_important_to_read: updatedImportantStatus });
+        }
         const updatedStudyData = { ...study, is_important_to_read: updatedImportantStatus };
-        onStudyUpdate(updatedStudyData); // Update the parent component's state
+        onStudyUpdate(updatedStudyData);
     } catch(e) {
         console.error("Failed to update importance", e);
     } finally {
@@ -229,7 +193,7 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
 
   const isMajor = study.is_major_journal || study.impact_factor >= 25;
   
-  const displayCommentCount = commentCount > 5 ? "5+" : commentCount;
+  // Discussion removed
 
   return (
     <Card className="professional-card">
@@ -291,7 +255,7 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
                     className="text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    <span>Source</span>
+                    <span>PubMed</span>
                   </a>
                 ) : (
                   <a
@@ -304,12 +268,6 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
                     <ExternalLink className="w-3 h-3" />
                     <span>Search PubMed</span>
                   </a>
-                )}
-                {study.impact_factor && !isMajor && (
-                  <div className="flex items-center gap-1">
-                    <Star className="w-3 h-3" />
-                    <span>IF: {study.impact_factor}</span>
-                  </div>
                 )}
               </div>
             </div>
@@ -324,13 +282,14 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
                 >
                   <EyeOff className="w-4 h-4" />
                 </Button>
-                {currentUser?.is_important_contributor && (
+                {currentUser?.role === 'admin' && (
                     <Button 
                         variant="ghost" 
                         size="icon" 
                         onClick={handleToggleImportant}
                         disabled={isUpdatingImportance}
                         className="text-slate-500 hover:text-amber-500"
+                        title={study.is_important_to_read ? 'Unmark as Key Study' : 'Mark as Key Study'}
                     >
                         <Star className={`w-4 h-4 transition-all ${study.is_important_to_read ? 'text-amber-400 fill-amber-400' : ''}`} />
                     </Button>
@@ -421,74 +380,7 @@ export default function StudyCard({ study, creator, statusRecord, onStatusChange
             </div>
           )}
 
-          {/* Discussion Section */}
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
-             <div>
-                {statusRecord?.status === 'read' && (
-                    <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-sm py-1 px-3 flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4" />
-                      Read
-                    </Badge>
-                )}
-                {statusRecord?.status === 'want_to_read' && (
-                    <Badge className="bg-blue-100 text-blue-800 border border-blue-200 font-semibold text-sm py-1 px-3">Want to Read</Badge>
-                )}
-            </div>
-            <HoverCard onOpenChange={(open) => open && loadComments()}>
-              <HoverCardTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 text-slate-600 hover:text-slate-900 px-2">
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Discuss</span>
-                  {commentCount > 0 && (
-                    <Badge variant="secondary" className="px-1.5">{displayCommentCount}</Badge>
-                  )}
-                </Button>
-              </HoverCardTrigger>
-              <HoverCardContent className="w-[90vw] max-w-sm" side="top" align="end">
-                <div className="flex flex-col h-full max-h-[50vh]">
-                  <div className="space-y-1 mb-4">
-                    <h4 className="font-semibold">Discussion</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Share your thoughts on this study.
-                    </p>
-                  </div>
-                  <div className="flex-1 space-y-3 overflow-y-auto pr-2 pb-2">
-                    {isCommentsLoading ? (
-                      <div className="space-y-2">
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-3/4" />
-                        <Skeleton className="h-8 w-full" />
-                      </div>
-                    ) : comments.length > 0 ? (
-                      comments.map((c) => (
-                        <div key={c.id} className="text-sm">
-                          <span className="font-semibold text-slate-800">
-                            {c.created_by ? c.created_by.split('@')[0] : 'Anonymous'}:
-                          </span>{' '}
-                          <span className="text-slate-600">{c.content}</span>
-                        </div>
-                      ))
-                    ) : hasLoadedComments ? (
-                      <p className="text-sm text-slate-500 text-center py-4">No comments yet. Start the discussion!</p>
-                    ) : (
-                      <p className="text-sm text-slate-500 text-center py-4">Loading discussion...</p>
-                    )}
-                  </div>
-                  <form onSubmit={handlePostComment} className="flex gap-2 pt-4 border-t border-slate-200">
-                    <Input
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="Add a comment..."
-                      className="h-9"
-                    />
-                    <Button type="submit" size="icon" className="h-9 w-9 flex-shrink-0 bg-slate-800 hover:bg-slate-900 text-white">
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </form>
-                </div>
-              </HoverCardContent>
-            </HoverCard>
-          </div>
+          {/* Discussion removed */}
         </div>
       </CardContent>
     </Card>

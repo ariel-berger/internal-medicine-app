@@ -1,13 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from datetime import timedelta
 import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Optional
 from werkzeug.security import generate_password_hash, check_password_hash
+import threading
+import logging
 
 # Load environment variables
 # 1) Load root .env if present
@@ -99,6 +101,7 @@ class User(db.Model):
             'id': self.id,
             'email': self.email,
             'fullName': self.full_name,
+            'role': self.role,
         }
 
 class Study(db.Model):
@@ -131,6 +134,12 @@ class Study(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class KeyArticle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    article_id = db.Column(db.Integer, unique=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
 class UserStudyStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     study_id = db.Column(db.Integer, db.ForeignKey('study.id'), nullable=False)
@@ -156,11 +165,32 @@ class Comment(db.Model):
     content = db.Column(db.Text, nullable=False)
     created_by = db.Column(db.String(200), nullable=False)
     created_date = db.Column(db.DateTime, default=db.func.current_timestamp())
+    # Optional article_id for medical articles (not a foreign key in this DB)
+    article_id = db.Column(db.Integer, nullable=True)
     
     def to_dict(self):
         return {
             'id': self.id,
             'study_id': self.study_id,
+            'user_id': self.user_id,
+            'content': self.content,
+            'created_by': self.created_by,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'article_id': self.article_id
+        }
+
+class ArticleComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    article_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_by = db.Column(db.String(200), nullable=False)
+    created_date = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'article_id': self.article_id,
             'user_id': self.user_id,
             'content': self.content,
             'created_by': self.created_by,
@@ -314,7 +344,8 @@ def get_current_user():
     return jsonify({
         'id': user.id,
         'email': user.email,
-        'fullName': user.full_name
+        'fullName': user.full_name,
+        'role': user.role,
     })
 
 @app.route('/api/studies', methods=['GET'])
@@ -745,16 +776,21 @@ def get_relevant_articles():
         else:
             order_clause = 'ORDER BY ec.ranking_score DESC, a.publication_date DESC'
         
+        # Check if we should exclude hidden articles (for dashboard)
+        exclude_hidden = request.args.get('exclude_hidden', 'false').lower() == 'true'
+        hidden_clause = 'AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)' if exclude_hidden else ''
+        
         # Get relevant articles with enhanced classification data
         query = f"""
             SELECT a.id, a.pmid, a.title, a.abstract, a.journal, a.authors, 
                    a.publication_date, a.doi, a.url, a.medical_category, a.article_type,
                    ec.ranking_score, ec.clinical_bottom_line, ec.tags, ec.participants,
                    ec.focus_points, ec.type_points, ec.prevalence_points, 
-                   ec.hospitalization_points, ec.impact_factor_points
+                   ec.hospitalization_points, ec.impact_factor_points,
+                   COALESCE(ec.hidden_from_dashboard, 0) as hidden_from_dashboard
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
-            WHERE ec.is_relevant = 1
+            WHERE ec.is_relevant = 1 {hidden_clause}
             {order_clause}
             LIMIT ? OFFSET ?
         """
@@ -762,10 +798,25 @@ def get_relevant_articles():
         cursor.execute(query, (limit, offset))
         articles = cursor.fetchall()
         
-        # Get total count of relevant articles
-        cursor.execute("SELECT COUNT(*) FROM enhanced_classifications WHERE is_relevant = 1")
+        # Get total count of relevant articles (respecting hidden filter)
+        count_query = f"""
+            SELECT COUNT(*) 
+            FROM enhanced_classifications ec
+            WHERE ec.is_relevant = 1 {hidden_clause}
+        """
+        cursor.execute(count_query)
         total_count = cursor.fetchone()[0]
         
+        # Gather IDs to check key flags
+        article_ids = [row[0] for row in articles]
+        key_ids = set()
+        if article_ids:
+            try:
+                key_records = KeyArticle.query.filter(KeyArticle.article_id.in_(article_ids)).all()
+                key_ids = {r.article_id for r in key_records}
+            except Exception as e:
+                print(f"Warning: failed to load key article flags: {e}")
+
         # Format results
         results = []
         for article in articles:
@@ -789,7 +840,9 @@ def get_relevant_articles():
                 'type_points': article[16],
                 'prevalence_points': article[17],
                 'hospitalization_points': article[18],
-                'impact_factor_points': article[19]
+                'impact_factor_points': article[19],
+                'is_key_study': article[0] in key_ids,
+                'hidden_from_dashboard': bool(article[20]) if len(article) > 20 else False
             })
         
         return jsonify({
@@ -805,6 +858,76 @@ def get_relevant_articles():
     finally:
         if 'conn' in locals():
             conn.close()
+
+@app.route('/api/medical-articles/<int:article_id>/key', methods=['PUT'])
+@jwt_required()
+def set_article_key_flag(article_id: int):
+    """Admin-only: set or clear key study flag for a medical article"""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    is_key = bool(data.get('is_key_study'))
+
+    try:
+        record = KeyArticle.query.filter_by(article_id=article_id).first()
+        if is_key:
+            if not record:
+                record = KeyArticle(article_id=article_id, created_by=current_user_id)
+                db.session.add(record)
+        else:
+            if record:
+                db.session.delete(record)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update key flag: {e}'}), 500
+
+    return jsonify({'article_id': article_id, 'is_key_study': is_key})
+
+@app.route('/api/medical-articles/<int:article_id>/hide-dashboard', methods=['PUT'])
+@jwt_required()
+def set_article_hidden_from_dashboard(article_id: int):
+    """Admin-only: set or clear hidden_from_dashboard flag for a medical article"""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    is_hidden = bool(data.get('hidden_from_dashboard'))
+
+    if not medical_conn:
+        return jsonify({'error': 'Medical articles database not available'}), 503
+    
+    try:
+        conn = get_medical_connection()
+        if not conn:
+            return jsonify({'error': 'Medical articles database not available'}), 503
+        cursor = conn.cursor()
+        
+        # Update the hidden_from_dashboard flag
+        cursor.execute('''
+            UPDATE enhanced_classifications
+            SET hidden_from_dashboard = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE article_id = ?
+        ''', (1 if is_hidden else 0, article_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'Article not found or no classification record'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'article_id': article_id, 'hidden_from_dashboard': is_hidden})
+        
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        return jsonify({'error': f'Failed to update hidden flag: {str(e)}'}), 500
 
 @app.route('/api/medical-articles/relevant/stats', methods=['GET'])
 @jwt_required()
@@ -976,30 +1099,7 @@ def delete_user_study_status(record_id):
         db.session.rollback()
         return jsonify({'error': f'Failed to delete status: {str(e)}'}), 500
 
-@app.route('/api/comments', methods=['GET'])
-@jwt_required()
-def get_comments():
-    """Get comments"""
-    try:
-        sort = request.args.get('sort', '-created_date')
-        
-        # Build query
-        query = Comment.query
-        
-        # Apply sorting
-        if sort.startswith('-'):
-            field = sort[1:]
-            if hasattr(Comment, field):
-                query = query.order_by(getattr(Comment, field).desc())
-        else:
-            if hasattr(Comment, sort):
-                query = query.order_by(getattr(Comment, sort))
-        
-        comments = query.all()
-        return jsonify([comment.to_dict() for comment in comments])
-        
-    except Exception as e:
-        return jsonify({'error': f'Failed to get comments: {str(e)}'}), 500
+# Comments API removed per product decision
 
 @app.route('/api/users', methods=['GET'])
 @jwt_required()
@@ -1063,6 +1163,79 @@ def demote_user_from_admin():
         db.session.rollback()
         return jsonify({'error': f'Failed to demote: {str(e)}'}), 500
 
+def _verify_cron_token():
+    """Verify cron token from request header or query param."""
+    cron_token = os.getenv('CRON_SECRET_TOKEN')
+    if not cron_token:
+        return False
+    
+    # Check header first (X-Cron-Token), then query param
+    header_token = request.headers.get('X-Cron-Token')
+    query_token = request.args.get('token')
+    
+    return header_token == cron_token or query_token == cron_token
+
+@app.route('/api/admin/articles/fetch-weekly', methods=['POST'])
+def fetch_weekly_articles():
+    """
+    Fetch and classify articles from the last 7 days.
+    Can be accessed by:
+    - Admin users with JWT token (for manual triggering)
+    - External cron services with CRON_SECRET_TOKEN (for automated scheduling)
+    """
+    # Check authentication: either admin JWT or cron token
+    is_admin = False
+    is_cron = _verify_cron_token()
+    
+    # Try JWT auth if cron token not present
+    if not is_cron:
+        try:
+            verify_jwt_in_request()
+            user_id = get_jwt_identity()
+            current_user = User.query.get(int(user_id))
+            is_admin = current_user and current_user.role == 'admin'
+        except Exception:
+            # JWT auth failed or not provided
+            pass
+    
+    if not is_admin and not is_cron:
+        return jsonify({'error': 'Admin access or valid cron token required'}), 403
+    
+    if not medical_articles_service:
+        return jsonify({'error': 'Medical articles processing service not available'}), 503
+    
+    # Get optional parameters
+    data = request.get_json() or {}
+    email = data.get('email') or os.getenv('PUBMED_EMAIL')
+    model_provider = data.get('model', 'claude')
+    
+    # Run processing in background thread to avoid timeouts
+    def process_articles():
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("Starting weekly article processing (background thread)")
+            result = medical_articles_service.process_weekly_articles(
+                email=email,
+                model_provider=model_provider
+            )
+            if result.get('success'):
+                logger.info(f"Weekly processing completed: {result.get('articles_stored', 0)} articles stored")
+            else:
+                logger.error(f"Weekly processing failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in background weekly processing: {e}")
+    
+    # Start background thread
+    thread = threading.Thread(target=process_articles, daemon=True)
+    thread.start()
+    
+    return jsonify({
+        'message': 'Weekly article processing started in background',
+        'status': 'processing',
+        'note': 'Processing articles from the last 7 days. This may take several minutes.'
+    }), 202
+
 # Ensure database tables exist at import time for production servers (gunicorn)
 try:
     with app.app_context():
@@ -1073,6 +1246,7 @@ try:
             db.session.commit()
         except Exception:
             db.session.rollback()
+        # Comment article_id migration removed
         if ADMIN_EMAILS:
             for admin_email in ADMIN_EMAILS:
                 u = User.query.filter_by(email=admin_email).first()

@@ -446,6 +446,30 @@ def migrate_penalty_scoring_columns():
     finally:
         conn.close()
 
+def add_hidden_from_dashboard_column():
+    """Add hidden_from_dashboard column to enhanced_classifications table."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Check if the new column already exists
+        cursor.execute("PRAGMA table_info(enhanced_classifications)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'hidden_from_dashboard' not in columns:
+            print("Adding hidden_from_dashboard column...")
+            cursor.execute('ALTER TABLE enhanced_classifications ADD COLUMN hidden_from_dashboard BOOLEAN DEFAULT 0')
+            conn.commit()
+            print("✅ Successfully added hidden_from_dashboard column")
+        else:
+            print("✅ hidden_from_dashboard column already exists")
+            
+    except sqlite3.Error as e:
+        print(f"❌ Error adding hidden_from_dashboard column: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 def get_connection():
     """Get database connection."""
     import os
@@ -468,4 +492,5 @@ if __name__ == "__main__":
     remove_guideline_scoring_columns()
     add_temporality_points_column()
     migrate_penalty_scoring_columns()
+    add_hidden_from_dashboard_column()
     print("Database created and migrated successfully!")

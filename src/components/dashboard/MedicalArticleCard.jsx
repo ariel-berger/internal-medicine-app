@@ -6,10 +6,12 @@ import {
   Award, Calendar, Users, MapPin, ChevronDown, ChevronUp,
   Stethoscope, TrendingUp, BookOpen, Star, ExternalLink, 
   Bookmark, Library, EyeOff, Eye, CheckCircle, MessageSquare,
-  Crown, Target, BarChart3
+  Crown, Target, BarChart3, MinusCircle, PlusCircle
 } from "lucide-react";
 import { format } from "date-fns";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { MedicalArticle as MedicalArticleAPI } from '@/api/medicalArticles';
+import { User as UserEntity } from '@/api/entities';
+// Discussion feature removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatAbstract } from '@/utils/formatAbstract.jsx';
 
@@ -87,9 +89,31 @@ function ReadingStatusManager({ article, statusRecord, onStatusChange }) {
   );
 }
 
-export default function MedicalArticleCard({ article, statusRecord, onStatusChange, onCommentAdded, commentCount = 0 }) {
+export default function MedicalArticleCard({ article, statusRecord, onStatusChange, isAdmin = false, onArticleUpdate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
+  const [isUpdatingHidden, setIsUpdatingHidden] = useState(false);
+
+  const parseTags = (tags) => {
+    if (!tags) return [];
+    if (Array.isArray(tags)) return tags.filter(Boolean);
+    if (typeof tags === 'string') {
+      // Try JSON parse first
+      try {
+        const parsed = JSON.parse(tags);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch (_) {}
+      // Fallback: strip brackets and quotes, then split by comma
+      return tags
+        .replace(/^\s*\[/, '')
+        .replace(/\]\s*$/, '')
+        .split(',')
+        .map(t => t.trim().replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, ''))
+        .filter(Boolean);
+    }
+    return [];
+  };
 
   // Render a collapsed version if isCollapsed is true
   if (isCollapsed) {
@@ -112,11 +136,16 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
     );
   }
 
-  const isMajor = article.isMajorJournal();
-  const specialty = article.getSpecialty();
+  const isMajor = typeof article?.isMajorJournal === 'function'
+    ? article.isMajorJournal()
+    : (typeof article?.ranking_score === 'number' && article.ranking_score >= 8);
+  const specialty = typeof article?.getSpecialty === 'function'
+    ? article.getSpecialty()
+    : (article?.medical_category ? article.medical_category.replace(/_/g, ' ') : null);
   const publicationType = article.publication_type;
-  
-  const displayCommentCount = commentCount > 5 ? "5+" : commentCount;
+  const formattedPubDate = typeof article?.getFormattedPublicationDate === 'function'
+    ? article.getFormattedPublicationDate()
+    : (article?.publication_date ? new Date(article.publication_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : null);
 
   return (
     <Card className="professional-card">
@@ -131,6 +160,12 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                   <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold">
                     <Star className="w-3 h-3 mr-1.5 fill-amber-400 text-amber-600" />
                     Score: {article.ranking_score}
+                  </Badge>
+                )}
+                {article.is_key_study && (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold">
+                    <Star className="w-3 h-3 mr-1.5 fill-amber-400 text-amber-600" />
+                    Key Study
                   </Badge>
                 )}
                 
@@ -219,6 +254,58 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
               >
                 <EyeOff className="w-4 h-4" />
               </Button>
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={async () => {
+                      if (isUpdatingImportance) return;
+                      setIsUpdatingImportance(true);
+                      try {
+                        const next = !article.is_key_study;
+                        await MedicalArticleAPI.setKeyStudy(article.id, next);
+                        onArticleUpdate && onArticleUpdate({ ...article, is_key_study: next });
+                      } catch (e) {
+                        console.error('Failed to toggle key study', e);
+                      } finally {
+                        setIsUpdatingImportance(false);
+                      }
+                    }}
+                    disabled={isUpdatingImportance}
+                    className="text-slate-500 hover:text-amber-500"
+                    title={article.is_key_study ? 'Unmark as Key Study' : 'Mark as Key Study'}
+                  >
+                    <Star className={`w-4 h-4 transition-all ${article.is_key_study ? 'text-amber-400 fill-amber-400' : ''}`} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={async () => {
+                      if (isUpdatingHidden) return;
+                      setIsUpdatingHidden(true);
+                      try {
+                        const next = !article.hidden_from_dashboard;
+                        await MedicalArticleAPI.setHiddenFromDashboard(article.id, next);
+                        onArticleUpdate && onArticleUpdate({ ...article, hidden_from_dashboard: next });
+                      } catch (e) {
+                        console.error('Failed to toggle hidden from dashboard', e);
+                      } finally {
+                        setIsUpdatingHidden(false);
+                      }
+                    }}
+                    disabled={isUpdatingHidden}
+                    className="text-slate-500 hover:text-red-500"
+                    title={article.hidden_from_dashboard ? 'Show on Dashboard' : 'Hide from Dashboard'}
+                  >
+                    {article.hidden_from_dashboard ? (
+                      <PlusCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <MinusCircle className="w-4 h-4 text-red-500" />
+                    )}
+                  </Button>
+                </>
+              )}
               
               {onStatusChange && <ReadingStatusManager article={article} statusRecord={statusRecord} onStatusChange={onStatusChange} />}
             </div>
@@ -240,10 +327,10 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
               </div>
             )}
             
-            {article.publication_date && (
+            {formattedPubDate && (
               <div className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                <span>{article.getFormattedPublicationDate()}</span>
+                <span>{formattedPubDate}</span>
               </div>
             )}
             
@@ -294,7 +381,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
           {/* Tags */}
           {article.tags && (
             <div className="flex flex-wrap gap-2">
-              {article.tags.split(',').map((tag, index) => (
+              {parseTags(article.tags).map((tag, index) => (
                 <Badge key={index} variant="secondary" className="text-xs">
                   {tag.trim()}
                 </Badge>
@@ -316,30 +403,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
               )}
             </div>
             
-            <HoverCard>
-              <HoverCardTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 text-slate-600 hover:text-slate-900 px-2">
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Discuss</span>
-                  {commentCount > 0 && (
-                    <Badge variant="secondary" className="px-1.5">{displayCommentCount}</Badge>
-                  )}
-                </Button>
-              </HoverCardTrigger>
-              <HoverCardContent className="w-[90vw] max-w-sm" side="top" align="end">
-                <div className="flex flex-col h-full max-h-[50vh]">
-                  <div className="space-y-1 mb-4">
-                    <h4 className="font-semibold">Discussion</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Share your thoughts on this article.
-                    </p>
-                  </div>
-                  <div className="flex-1 space-y-3 overflow-y-auto pr-2 pb-2">
-                    <p className="text-sm text-slate-500 text-center py-4">Discussion feature coming soon!</p>
-                  </div>
-                </div>
-              </HoverCardContent>
-            </HoverCard>
+            {/* Discussion removed */}
           </div>
         </div>
       </CardContent>

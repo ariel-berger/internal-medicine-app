@@ -7,8 +7,8 @@ export default function MedicalArticleGrid({
   isLoading, 
   statusMap, 
   onStatusChange, 
-  onCommentAdded, 
-  commentCounts = {} 
+  isAdmin = false,
+  onArticleUpdate
 }) {
   if (isLoading) {
     return (
@@ -66,8 +66,8 @@ export default function MedicalArticleGrid({
           article={article}
           statusRecord={statusMap.get(article.id)}
           onStatusChange={onStatusChange}
-          onCommentAdded={onCommentAdded}
-          commentCount={commentCounts[article.id] || 0}
+          isAdmin={isAdmin}
+          onArticleUpdate={onArticleUpdate}
         />
       ))}
     </div>

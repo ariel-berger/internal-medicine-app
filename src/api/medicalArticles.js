@@ -5,6 +5,26 @@ export class MedicalArticle {
     Object.assign(this, data);
   }
 
+  static async setKeyStudy(articleId, isKey) {
+    try {
+      const data = await localClient.setMedicalArticleKey(articleId, isKey);
+      return data;
+    } catch (error) {
+      console.error('Error setting key study flag:', error);
+      throw error;
+    }
+  }
+
+  static async setHiddenFromDashboard(articleId, isHidden) {
+    try {
+      const data = await localClient.setMedicalArticleHiddenFromDashboard(articleId, isHidden);
+      return data;
+    } catch (error) {
+      console.error('Error setting hidden from dashboard flag:', error);
+      throw error;
+    }
+  }
+
   static async getRelevantArticles(params = {}) {
     try {
       const response = await localClient.getRelevantArticles(params);

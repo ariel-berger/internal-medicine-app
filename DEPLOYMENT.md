@@ -22,6 +22,11 @@ All necessary code changes have been made for deployment:
 4. **Deployment Configuration** (`Procfile`)
    - Created Procfile for Render.com deployment
 
+5. **Weekly Article Fetching** (`backend/app.py`)
+   - Added `/api/admin/articles/fetch-weekly` endpoint
+   - Supports both admin JWT authentication and cron token for automated scheduling
+   - Runs processing in background thread to avoid timeouts
+
 ## Deployment Steps
 
 ### Backend on Render.com (Free Tier)
@@ -46,14 +51,17 @@ All necessary code changes have been made for deployment:
    JWT_SECRET_KEY=<generate a different strong random string>
    DATABASE_URL=sqlite:///app.db
    FLASK_ENV=production
-   FRONTEND_URL=https://your-vercel-app.vercel.app
+   FRONTEND_URL=https://internal-medicine-app.vercel.app
    PORT=10000
+   CRON_SECRET_TOKEN=<generate a strong random string for cron jobs>
+   PUBMED_EMAIL=<your-email@example.com> (optional, recommended for PubMed API)
    ```
    
    **Generate secrets:**
    ```bash
    # On Mac/Linux:
    python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+   # Run this twice: once for SECRET_KEY, once for JWT_SECRET_KEY, once for CRON_SECRET_TOKEN
    ```
 
 5. **Deploy** → Render will automatically deploy your service
@@ -76,9 +84,9 @@ All necessary code changes have been made for deployment:
 
 4. **Set Environment Variables:**
    ```
-   VITE_API_BASE_URL=https://your-render-app.onrender.com/api
+   VITE_API_BASE_URL=https://medicaldash-backend.onrender.com/api
    ```
-   Replace `your-render-app.onrender.com` with your actual Render backend URL
+   Using your live backend URL: `https://medicaldash-backend.onrender.com`
 
 5. **Deploy** → Vercel will build and deploy your frontend
 
@@ -115,11 +123,64 @@ The medical articles library path in `requirements.txt` is commented out. If you
 - Generous bandwidth limits
 - Perfect for side projects
 
+## Weekly Article Fetching
+
+The backend includes an endpoint to automatically fetch and classify articles from the last 7 days. Since Render's free tier doesn't support cron jobs, you'll need to use an external cron service.
+
+### Setting Up Automated Weekly Fetching
+
+1. **Get your backend URL and cron token:**
+   - Your backend URL: `https://medicaldash-backend.onrender.com` (or your Render URL)
+   - Your cron token: The `CRON_SECRET_TOKEN` you set in Render environment variables
+
+2. **Set up an external cron service** (recommended: **cron-job.org** - free):
+   - Go to https://cron-job.org (free account available)
+   - Create a new cron job
+   - **URL**: `https://medicaldash-backend.onrender.com/api/admin/articles/fetch-weekly`
+   - **Method**: POST
+   - **Schedule**: Weekly (e.g., every Monday at 2:00 AM)
+   - **Headers**: Add custom header `X-Cron-Token: <your-cron-secret-token>`
+   - Or use query parameter: `?token=<your-cron-secret-token>`
+   - Save the cron job
+
+3. **Alternative: Use curl from your own server:**
+   ```bash
+   # Run this weekly (e.g., via cron on your own server):
+   curl -X POST https://medicaldash-backend.onrender.com/api/admin/articles/fetch-weekly \
+     -H "X-Cron-Token: <your-cron-secret-token>"
+   ```
+
+4. **Manual triggering (admin only):**
+   - Log in as admin in your app
+   - Make a POST request to `/api/admin/articles/fetch-weekly` with your JWT token
+   - Or use curl:
+   ```bash
+   curl -X POST https://medicaldash-backend.onrender.com/api/admin/articles/fetch-weekly \
+     -H "Authorization: Bearer <your-jwt-token>"
+   ```
+
+### How It Works
+
+- The endpoint accepts either:
+  - Admin JWT token (for manual triggering)
+  - `CRON_SECRET_TOKEN` (for automated cron services)
+- Processing runs in a background thread to avoid timeouts
+- The endpoint returns immediately with status 202 (Accepted)
+- Processing typically takes 5-30 minutes depending on the number of articles
+- Check Render logs to see processing status
+
+### Important Notes
+
+⚠️ **Render Free Tier**: Services sleep after 15 minutes of inactivity. The first request to wake up the service takes ~30 seconds. For weekly fetching:
+- This delay is acceptable since it runs weekly
+- The cron service will wake up the Render service automatically
+- Consider upgrading to Render paid tier if you need faster wake-up times
+
 ## Testing
 
 1. Test your deployed backend:
    ```bash
-   curl https://your-backend.onrender.com/api/health
+   curl https://medicaldash-backend.onrender.com/api/health
    ```
 
 2. Visit your Vercel URL and test:

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Study } from '@/api/entities';
 import { User } from '@/api/entities';
 import { UserStudyStatus } from '@/api/entities';
-import { Comment } from '@/api/entities';
+// Comments feature removed
 import { MedicalArticle } from '@/api/medicalArticles';
 import { getStatusMap as getArticleStatusMap, setStatus as setArticleStatus } from '@/api/articleStatuses';
 import { Input } from "@/components/ui/input";
@@ -101,10 +101,11 @@ export default function AllStudies() {
   const [medicalArticles, setMedicalArticles] = useState([]);
   const [userStatuses, setUserStatuses] = useState(new Map());
   const [articleStatuses, setArticleStatuses] = useState(new Map());
-  const [commentCounts, setCommentCounts] = useState({});
+  // Comments feature removed
   const [users, setUsers] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentUser, setCurrentUser] = useState(null);
   const [filters, setFilters] = useState({
     specialties: new Set(SPECIALTIES),
     isMajor: false,
@@ -120,6 +121,7 @@ export default function AllStudies() {
     setIsLoading(true);
     try {
       const currentUser = await User.me();
+      setCurrentUser(currentUser);
       
       // Load medical articles (all relevant articles)
       const medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
@@ -131,17 +133,19 @@ export default function AllStudies() {
       // Load persisted article statuses from localStorage
       setArticleStatuses(getArticleStatusMap());
 
-      const [studies, statuses, comments] = await Promise.all([
+      const [studies, statuses] = await Promise.all([
         Study.list('-publication_date'),
-        currentUser ? UserStudyStatus.filter({ created_by: currentUser.email }) : [],
-        Comment.list()
+        currentUser ? UserStudyStatus.filter({ created_by: currentUser.email }) : []
       ]);
-      setAllStudies(studies);
+      const normalizedStudies = studies.map(s => ({
+        ...s,
+        specialties: Array.isArray(s.specialties)
+          ? s.specialties
+          : (s.specialty ? [s.specialty] : [])
+      }));
+      setAllStudies(normalizedStudies);
       setUserStatuses(new Map(statuses.map(s => [s.study_id, s])));
-      setCommentCounts(comments.reduce((acc, comment) => {
-        acc[comment.study_id] = (acc[comment.study_id] || 0) + 1;
-        return acc;
-      }, {}));
+      // Comments removed
 
       if (currentUser && currentUser.role === 'admin') {
         const usersData = await User.list();
@@ -181,9 +185,11 @@ export default function AllStudies() {
     });
   };
 
-  const handleCommentAdded = (studyId) => {
-    setCommentCounts(prev => ({...prev, [studyId]: (prev[studyId] || 0) + 1}));
+  const handleArticleUpdate = (updatedArticle) => {
+    setMedicalArticles(prev => prev.map(a => (a.id === updatedArticle.id ? updatedArticle : a)));
   };
+
+  // Comments removed
 
   const monthYearOptions = useMemo(() => {
     const options = new Map();
@@ -232,7 +238,8 @@ export default function AllStudies() {
         (study.journal && study.journal.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
-      const specialtyMatch = study.specialties && study.specialties.some(s => normalizedSelected.has(normalizeSpecialty(s)));
+      const studySpecialties = Array.isArray(study.specialties) ? study.specialties : (study.specialty ? [study.specialty] : []);
+      const specialtyMatch = studySpecialties.length === 0 || studySpecialties.some(s => normalizedSelected.has(normalizeSpecialty(s)));
       const majorMatch = !isMajor || study.is_major_journal || study.impact_factor >= 25;
       const keyMatch = !isKey || study.is_important_to_read;
       
@@ -262,7 +269,7 @@ export default function AllStudies() {
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
       const specialtyMatch = article.medical_category && normalizedSelected.has(normalizeSpecialty(article.medical_category));
       const majorMatch = !isMajor || article.isMajorJournal();
-      const keyMatch = !isKey || article.ranking_score >= 7; // High ranking score = key study
+      const keyMatch = !isKey || article.is_key_study === true;
       
       let dateMatch = true;
       if (monthYear !== 'all') {
@@ -314,8 +321,8 @@ export default function AllStudies() {
           isLoading={isLoading}
           statusMap={articleStatuses}
           onStatusChange={handleArticleStatusChange}
-          onCommentAdded={handleCommentAdded}
-          commentCounts={commentCounts}
+          isAdmin={currentUser?.role === 'admin'}
+          onArticleUpdate={handleArticleUpdate}
         />
       </div>
 
@@ -337,8 +344,6 @@ export default function AllStudies() {
             statusMap={userStatuses}
             onStatusChange={handleStatusChange}
             onStudyUpdate={handleStudyUpdate}
-            onCommentAdded={handleCommentAdded}
-            commentCounts={commentCounts}
           />
         </div>
       )}

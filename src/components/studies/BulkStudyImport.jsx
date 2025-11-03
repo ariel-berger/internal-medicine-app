@@ -408,7 +408,7 @@ https://www.nejm.org/doi/full/10.1056/example`}
                         className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
                       >
                         <ExternalLink className="w-3 h-3" />
-                        Source
+                        PubMed
                       </a>
                     </div>
                     <p className="text-sm text-slate-700">{study.summary}</p>
