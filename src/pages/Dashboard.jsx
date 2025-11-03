@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Study } from "@/api/entities";
 import { User } from "@/api/entities";
 import { UserStudyStatus } from "@/api/entities";
-import { Comment } from "@/api/entities";
+// Comments feature removed
 import { MedicalArticle } from "@/api/medicalArticles";
 import { getStatusMap as getArticleStatusMap, setStatus as setArticleStatus } from "@/api/articleStatuses";
 import { Button } from "@/components/ui/button";
@@ -16,18 +16,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 
 import StudyGrid from "../components/dashboard/StudyGrid";
+import MedicalArticleGrid from "../components/dashboard/MedicalArticleGrid";
 import TopStudies from "../components/dashboard/TopStudies";
 
 export default function Dashboard() {
   const [studies, setStudies] = useState([]);
   const [medicalArticles, setMedicalArticles] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState({});
   const [userStatuses, setUserStatuses] = useState(new Map());
   const [articleStatuses, setArticleStatuses] = useState(new Map());
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [topThreeStudies, setTopThreeStudies] = useState([]);
-  const [commentCounts, setCommentCounts] = useState({});
+  // Comments feature removed
   const [monthYear, setMonthYear] = useState('all');
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export default function Dashboard() {
       let currentUser = null;
       try {
         currentUser = await User.me();
+        setCurrentUser(currentUser);
         console.log("Current user:", currentUser?.email || "Not logged in");
       } catch (e) {
         console.log("User not logged in, continuing without user data");
@@ -76,24 +79,22 @@ export default function Dashboard() {
         studiesData,
         currentUserStatusesData,
         allStatusesData,
-        allCommentsData,
       ] = await Promise.allSettled([
           Study.list("-publication_date", 10), // Fetch only the 10 most recent studies
           currentUser ? UserStudyStatus.filter({ created_by: currentUser.email }, "-created_date") : Promise.resolve([]),
           UserStudyStatus.list("-created_date"),
-          Comment.list(),
       ]);
 
       // Handle the results
       const studies = studiesData.status === 'fulfilled' ? studiesData.value : [];
       const userStatuses = currentUserStatusesData.status === 'fulfilled' ? currentUserStatusesData.value : [];
       const allStatuses = allStatusesData.status === 'fulfilled' ? allStatusesData.value : [];
-      const comments = allCommentsData.status === 'fulfilled' ? allCommentsData.value : [];
+      // Comments removed
 
       console.log("Loaded studies:", studies.length);
       console.log("Loaded user statuses:", userStatuses.length);
       console.log("Loaded all statuses:", allStatuses.length);
-      console.log("Loaded comments:", comments.length);
+      // console.log("Loaded comments:", comments.length);
 
       let usersData = [];
       if (currentUser && currentUser.role === 'admin') {
@@ -111,11 +112,7 @@ export default function Dashboard() {
 
       const statusMap = new Map(userStatuses.map(s => [s.study_id, s]));
 
-      const commentCountMap = comments.reduce((acc, comment) => {
-        acc[comment.study_id] = (acc[comment.study_id] || 0) + 1;
-        return acc;
-      }, {});
-      setCommentCounts(commentCountMap);
+      // Comments removed
 
       const readCounts = allStatuses
         .filter(s => s.status === 'read')
@@ -203,17 +200,34 @@ export default function Dashboard() {
     });
   };
   
-  const handleCommentAdded = (studyId) => {
-    setCommentCounts(prevCounts => ({
-      ...prevCounts,
-      [studyId]: (prevCounts[studyId] || 0) + 1
-    }));
+  // Comments removed
+
+  const handleArticleUpdate = (updatedArticle) => {
+    setMedicalArticles(prev => prev.map(a => (a.id === updatedArticle.id ? { ...a, ...updatedArticle } : a)));
   };
 
+  const sortedArticles = useMemo(() => {
+    const getScore = (item) => (typeof item.ranking_score === 'number' ? item.ranking_score : -Infinity);
+    const key = [];
+    const nonKey = [];
+    for (const a of medicalArticles) {
+      (a.is_key_study ? key : nonKey).push(a);
+    }
+    key.sort((a, b) => getScore(b) - getScore(a));
+    nonKey.sort((a, b) => getScore(b) - getScore(a));
+    return [...key, ...nonKey];
+  }, [medicalArticles]);
+
   const handleStudyUpdate = (updatedStudy) => {
-    setStudies(prevStudies =>
-      prevStudies.map(s => (s.id === updatedStudy.id ? updatedStudy : s))
-    );
+    if (updatedStudy?.isMedicalArticle) {
+      setMedicalArticles(prevArticles =>
+        prevArticles.map(a => (a.id === updatedStudy.id ? { ...a, is_key_study: updatedStudy.is_important_to_read } : a))
+      );
+    } else {
+      setStudies(prevStudies =>
+        prevStudies.map(s => (s.id === updatedStudy.id ? updatedStudy : s))
+      );
+    }
   };
   
   // Combine medical articles and regular studies for unified display
@@ -227,7 +241,7 @@ export default function Dashboard() {
           ...article,
           // Map article fields to study fields for compatibility
           specialties: article.medical_category ? [article.medical_category] : [],
-          is_important_to_read: article.ranking_score >= 7, // High ranking = key study
+          is_important_to_read: article.is_key_study === true,
           is_major_journal: article.ranking_score >= 8, // Use ranking score directly instead of method
           impact_factor: article.ranking_score, // Use ranking score as impact factor
           study_type: article.article_type || 'Journal Article',
@@ -270,29 +284,64 @@ export default function Dashboard() {
     return Array.from(options.values()).sort((a, b) => b.date - a.date);
   }, [allStudies]);
 
-  const filteredStudies = allStudies.filter(study => {
-    const lowercasedTerm = searchTerm.toLowerCase();
+  const filteredStudies = useMemo(() => {
+    return allStudies.filter(study => {
+      const lowercasedTerm = searchTerm.toLowerCase();
 
-    const searchMatch = !searchTerm || (
-      (study.title && study.title.toLowerCase().includes(lowercasedTerm)) ||
-      (study.journal && study.journal.toLowerCase().includes(lowercasedTerm)) ||
-      (study.medical_category && study.medical_category.toLowerCase().includes(lowercasedTerm))
-    );
+      const searchMatch = !searchTerm || (
+        (study.title && study.title.toLowerCase().includes(lowercasedTerm)) ||
+        (study.journal && study.journal.toLowerCase().includes(lowercasedTerm)) ||
+        (study.medical_category && study.medical_category.toLowerCase().includes(lowercasedTerm))
+      );
 
-    let dateMatch = true;
-    if (monthYear !== 'all') {
-      if (!study.publication_date) dateMatch = false;
-      else {
-        const [y, m] = monthYear.split('-').map(Number);
-        const date = study.isMedicalArticle ? new Date(study.publication_date) : parseISO(study.publication_date);
-        dateMatch = getYear(date) === y && getMonth(date) === m;
+      let dateMatch = true;
+      if (monthYear !== 'all') {
+        if (!study.publication_date) dateMatch = false;
+        else {
+          const [y, m] = monthYear.split('-').map(Number);
+          const date = study.isMedicalArticle ? new Date(study.publication_date) : parseISO(study.publication_date);
+          dateMatch = getYear(date) === y && getMonth(date) === m;
+        }
       }
-    }
 
-    return searchMatch && dateMatch;
-  });
+      return searchMatch && dateMatch;
+    });
+  }, [allStudies, searchTerm, monthYear]);
 
   console.log("Filtered studies:", filteredStudies.length, "Search term:", searchTerm);
+
+  // Get filtered medical articles from filteredStudies
+  const filteredAndSortedArticles = useMemo(() => {
+    // Extract only medical articles from filteredStudies
+    const filteredMedicalArticles = filteredStudies
+      .filter(study => study.isMedicalArticle === true)
+      .map(study => study.originalArticle || study); // Use original article if available
+    
+    const getScore = (item) => (typeof item.ranking_score === 'number' ? item.ranking_score : -Infinity);
+    const key = [];
+    const nonKey = [];
+    for (const a of filteredMedicalArticles) {
+      (a.is_key_study ? key : nonKey).push(a);
+    }
+    key.sort((a, b) => getScore(b) - getScore(a));
+    nonKey.sort((a, b) => getScore(b) - getScore(a));
+    return [...key, ...nonKey];
+  }, [filteredStudies]);
+
+  const topTenArticles = useMemo(() => filteredAndSortedArticles.slice(0, 10), [filteredAndSortedArticles]);
+
+  // Reorder: key studies first (by score desc), then others (by score desc), take top 10
+  const topTenByScore = useMemo(() => {
+    const getScore = (item) => (typeof item.ranking_score === 'number' ? item.ranking_score : -Infinity);
+    const key = [];
+    const nonKey = [];
+    for (const s of filteredStudies) {
+      (s.is_important_to_read ? key : nonKey).push(s);
+    }
+    key.sort((a, b) => getScore(b) - getScore(a));
+    nonKey.sort((a, b) => getScore(b) - getScore(a));
+    return [...key, ...nonKey].slice(0, 10);
+  }, [filteredStudies]);
 
   // Check if user is logged in by checking if we have a token
   const isLoggedIn = localStorage.getItem('auth_token') !== null;
@@ -373,11 +422,11 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <h2 className="text-lg lg:text-xl font-bold text-slate-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-slate-600" />
-                Latest Studies
+                Top Medical Articles
               </h2>
               <div className="flex items-center gap-4">
                 <div className="text-sm text-slate-600">
-                  Ranked by clinical relevance
+                  Key studies first, then by score
                 </div>
                 <Link to="/allstudies">
                   <Button variant="outline" className="w-full sm:w-auto">
@@ -387,12 +436,14 @@ export default function Dashboard() {
                 </Link>
               </div>
             </div>
-            <StudyGrid studies={filteredStudies} isLoading={isLoading} users={users} statusMap={unifiedStatusMap} onStatusChange={(id, rec) => {
-              // Route status changes for medical articles to local store; studies to backend
-              const isArticle = medicalArticles.some(a => a.id === id);
-              if (isArticle) handleArticleStatusChange(id, rec);
-              else handleStatusChange(id, rec);
-            }} onStudyUpdate={handleStudyUpdate} onCommentAdded={handleCommentAdded} commentCounts={commentCounts} />
+            <MedicalArticleGrid
+              articles={topTenArticles}
+              isLoading={isLoading}
+              statusMap={articleStatuses}
+              onStatusChange={handleArticleStatusChange}
+              isAdmin={currentUser?.role === 'admin'}
+              onArticleUpdate={handleArticleUpdate}
+            />
           </div>
         )}
       </div>
