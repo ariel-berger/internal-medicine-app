@@ -83,7 +83,7 @@ def main():
         datetime.strptime(args.start_date, '%Y/%m/%d')
         datetime.strptime(args.end_date, '%Y/%m/%d')
     except ValueError:
-        logger.error("❌ Invalid date format. Please use YYYY/MM/DD format (e.g., 2025/01/01)")
+        logger.error("ERROR: Invalid date format. Please use YYYY/MM/DD format (e.g., 2025/01/01)")
         return
     
     # Validate date range
@@ -91,24 +91,24 @@ def main():
     end_dt = datetime.strptime(args.end_date, '%Y/%m/%d')
     
     if start_dt > end_dt:
-        logger.error("❌ Start date must be before or equal to end date")
+        logger.error("ERROR: Start date must be before or equal to end date")
         return
     
     if (end_dt - start_dt).days > 365:
-        logger.warning("⚠️  Date range is longer than 1 year. This may take a while and could hit API limits.")
+        logger.warning("WARNING: Date range is longer than 1 year. This may take a while and could hit API limits.")
     
     logger.info("="*60)
     logger.info("STARTING ARTICLE FETCH AND CLASSIFICATION BY DATE RANGE")
     logger.info("="*60)
-    logger.info(f"📅 Date Range: {args.start_date} to {args.end_date}")
-    logger.info(f"🤖 AI Model: {args.model.upper()}")
+    logger.info(f"Date Range: {args.start_date} to {args.end_date}")
+    logger.info(f"AI Model: {args.model.upper()}")
     logger.info("="*60)
     
     # Initialize database
     logger.info("Initializing database...")
     create_database()
     migrate_database()
-    logger.info("✅ Database initialized successfully")
+    logger.info("SUCCESS: Database initialized successfully")
     
     # Step 1: Fetch articles from specified date range
     logger.info("\n" + "="*40)
@@ -121,7 +121,7 @@ def main():
         articles = result['articles']
         filtering_stats = result['filtering_stats']
         
-        logger.info(f"📊 Collection Results:")
+        logger.info(f"Collection Results:")
         logger.info(f"   - Articles collected: {len(articles)}")
         logger.info(f"   - Ahead of print filtered: {filtering_stats['ahead_of_print_filtered']}")
         logger.info(f"   - Non-research filtered: {filtering_stats['non_research_filtered']}")
@@ -130,11 +130,11 @@ def main():
         logger.info(f"   - Vaccine + dose/dosing filtered: {filtering_stats['vaccine_dose_filtered']}")
         
         if not articles:
-            logger.warning("⚠️  No articles found for the specified date range. Exiting.")
+            logger.warning("WARNING: No articles found for the specified date range. Exiting.")
             return
             
     except Exception as e:
-        logger.error(f"❌ Error fetching articles: {e}")
+        logger.error(f"ERROR: Error fetching articles: {e}")
         return
     
     # Step 2: Classify articles
@@ -145,14 +145,14 @@ def main():
     try:
         # Use specified AI model for classification
         model_name = "Claude Sonnet 4.5" if args.model == "claude" else "Gemini 2.5 Pro"
-        logger.info(f"🤖 Starting classification with {model_name}...")
+        logger.info(f"Starting classification with {model_name}...")
         classified_articles = classify_articles_batch(articles, model_provider=args.model)
         
         # Analyze classification results
         relevant_count = sum(1 for article in classified_articles if article.get('is_relevant', False))
         irrelevant_count = len(classified_articles) - relevant_count
         
-        logger.info(f"📊 Classification Results:")
+        logger.info(f"Classification Results:")
         logger.info(f"   - Total articles processed: {len(classified_articles)}")
         logger.info(f"   - Relevant articles: {relevant_count}")
         logger.info(f"   - Irrelevant articles: {irrelevant_count}")
@@ -165,7 +165,7 @@ def main():
                 category = article.get('medical_category', 'Unknown')
                 category_counts[category] = category_counts.get(category, 0) + 1
             
-            logger.info(f"📋 Relevant articles by category:")
+            logger.info(f"Relevant articles by category:")
             for category, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
                 logger.info(f"   - {category}: {count}")
         
@@ -177,12 +177,12 @@ def main():
                 reason = article.get('reason', 'Unknown')
                 reasons[reason] = reasons.get(reason, 0) + 1
             
-            logger.info(f"🚫 Rejection reasons:")
+            logger.info(f"Rejection reasons:")
             for reason, count in sorted(reasons.items(), key=lambda x: x[1], reverse=True):
                 logger.info(f"   - {reason}: {count}")
         
     except Exception as e:
-        logger.error(f"❌ Error classifying articles: {e}")
+        logger.error(f"ERROR: Error classifying articles: {e}")
         return
     
     # Step 3: Store in database
@@ -191,23 +191,23 @@ def main():
     logger.info("="*40)
     
     try:
-        logger.info("💾 Storing articles and classifications in database...")
+        logger.info("Storing articles and classifications in database...")
         inserted_count = batch_insert_articles(classified_articles)
         
-        logger.info(f"✅ Successfully stored {inserted_count} out of {len(classified_articles)} articles")
+        logger.info(f"SUCCESS: Successfully stored {inserted_count} out of {len(classified_articles)} articles")
         
         if inserted_count < len(classified_articles):
-            logger.warning(f"⚠️  {len(classified_articles) - inserted_count} articles were not stored (likely duplicates)")
+            logger.warning(f"WARNING: {len(classified_articles) - inserted_count} articles were not stored (likely duplicates)")
         
     except Exception as e:
-        logger.error(f"❌ Error storing articles in database: {e}")
+        logger.error(f"ERROR: Error storing articles in database: {e}")
         return
     
     # Final summary
     logger.info("\n" + "="*60)
     logger.info("DATE RANGE FETCH AND CLASSIFICATION COMPLETED")
     logger.info("="*60)
-    logger.info(f"📈 Final Summary:")
+    logger.info(f"Final Summary:")
     logger.info(f"   - Date range: {args.start_date} to {args.end_date}")
     logger.info(f"   - Articles fetched: {len(articles)}")
     logger.info(f"   - Articles classified: {len(classified_articles)}")
@@ -219,7 +219,7 @@ def main():
     
     # Show some examples of relevant articles
     if relevant_articles:
-        logger.info(f"\n📋 Sample relevant articles:")
+        logger.info(f"\nSample relevant articles:")
         for i, article in enumerate(relevant_articles[:3]):  # Show first 3
             logger.info(f"   {i+1}. {article.get('title', 'No title')[:80]}...")
             logger.info(f"      Category: {article.get('medical_category', 'Unknown')}")

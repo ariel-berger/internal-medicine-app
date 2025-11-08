@@ -147,12 +147,12 @@ def migrate_database():
             cursor.execute('ALTER TABLE enhanced_classifications_new RENAME TO enhanced_classifications')
             
             conn.commit()
-            print("✅ Successfully migrated database - removed disease_prevalence and practice_changing_potential columns")
+            print("SUCCESS: Successfully migrated database - removed disease_prevalence and practice_changing_potential columns")
         else:
-            print("✅ No migration needed - columns don't exist")
+            print("SUCCESS: No migration needed - columns don't exist")
             
     except sqlite3.Error as e:
-        print(f"❌ Error during migration: {e}")
+        print(f"ERROR: Error during migration: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -180,12 +180,12 @@ def add_rule_based_scoring_columns():
                     cursor.execute('ALTER TABLE enhanced_classifications ADD COLUMN neurology_penalty_points INTEGER DEFAULT 0')
             
             conn.commit()
-            print("✅ Successfully added rule-based scoring columns")
+            print("SUCCESS: Successfully added rule-based scoring columns")
         else:
-            print("✅ Rule-based scoring columns already exist")
+            print("SUCCESS: Rule-based scoring columns already exist")
             
     except sqlite3.Error as e:
-        print(f"❌ Error adding rule-based scoring columns: {e}")
+        print(f"ERROR: Error adding rule-based scoring columns: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -218,12 +218,12 @@ def add_new_penalty_scoring_columns():
                 cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {column} INTEGER DEFAULT 0')
             
             conn.commit()
-            print("✅ Successfully added new penalty and bonus scoring columns")
+            print("SUCCESS: Successfully added new penalty and bonus scoring columns")
         else:
-            print("✅ New penalty and bonus scoring columns already exist")
+            print("SUCCESS: New penalty and bonus scoring columns already exist")
             
     except sqlite3.Error as e:
-        print(f"❌ Error adding new penalty and bonus scoring columns: {e}")
+        print(f"ERROR: Error adding new penalty and bonus scoring columns: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -298,12 +298,12 @@ def remove_guideline_scoring_columns():
             cursor.execute('ALTER TABLE enhanced_classifications_new RENAME TO enhanced_classifications')
             
             conn.commit()
-            print("✅ Successfully migrated database - removed guideline scoring columns")
+            print("SUCCESS: Successfully migrated database - removed guideline scoring columns")
         else:
-            print("✅ No migration needed - guideline scoring columns don't exist")
+            print("SUCCESS: No migration needed - guideline scoring columns don't exist")
             
     except sqlite3.Error as e:
-        print(f"❌ Error during migration: {e}")
+        print(f"ERROR: Error during migration: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -380,14 +380,14 @@ def rename_rejection_reason_to_reason():
             cursor.execute('ALTER TABLE enhanced_classifications_new RENAME TO enhanced_classifications')
             
             conn.commit()
-            print("✅ Successfully renamed 'rejection_reason' to 'reason'")
+            print("SUCCESS: Successfully renamed 'rejection_reason' to 'reason'")
         elif 'reason' in columns:
-            print("✅ Column already renamed to 'reason'")
+            print("SUCCESS: Column already renamed to 'reason'")
         else:
-            print("⚠️ Neither 'rejection_reason' nor 'reason' column found")
+            print("WARNING: Neither 'rejection_reason' nor 'reason' column found")
             
     except sqlite3.Error as e:
-        print(f"❌ Error renaming column: {e}")
+        print(f"ERROR: Error renaming column: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -406,12 +406,12 @@ def add_temporality_points_column():
             print("Adding temporality_points column...")
             cursor.execute('ALTER TABLE enhanced_classifications ADD COLUMN temporality_points INTEGER DEFAULT 0')
             conn.commit()
-            print("✅ Successfully added temporality_points column")
+            print("SUCCESS: Successfully added temporality_points column")
         else:
-            print("✅ temporality_points column already exists")
+            print("SUCCESS: temporality_points column already exists")
             
     except sqlite3.Error as e:
-        print(f"❌ Error adding temporality_points column: {e}")
+        print(f"ERROR: Error adding temporality_points column: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -436,12 +436,12 @@ def migrate_penalty_scoring_columns():
                 cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {column} INTEGER DEFAULT 0')
             
             conn.commit()
-            print("✅ Successfully added new penalty scoring columns")
+            print("SUCCESS: Successfully added new penalty scoring columns")
         else:
-            print("✅ New penalty scoring columns already exist")
+            print("SUCCESS: New penalty scoring columns already exist")
             
     except sqlite3.Error as e:
-        print(f"❌ Error adding new penalty scoring columns: {e}")
+        print(f"ERROR: Error adding new penalty scoring columns: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -460,12 +460,12 @@ def add_hidden_from_dashboard_column():
             print("Adding hidden_from_dashboard column...")
             cursor.execute('ALTER TABLE enhanced_classifications ADD COLUMN hidden_from_dashboard BOOLEAN DEFAULT 0')
             conn.commit()
-            print("✅ Successfully added hidden_from_dashboard column")
+            print("SUCCESS: Successfully added hidden_from_dashboard column")
         else:
-            print("✅ hidden_from_dashboard column already exists")
+            print("SUCCESS: hidden_from_dashboard column already exists")
             
     except sqlite3.Error as e:
-        print(f"❌ Error adding hidden_from_dashboard column: {e}")
+        print(f"ERROR: Error adding hidden_from_dashboard column: {e}")
         conn.rollback()
     finally:
         conn.close()
