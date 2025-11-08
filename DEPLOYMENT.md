@@ -138,10 +138,46 @@ The medical articles library path in `requirements.txt` is commented out. If you
    - The `medical_articles.db` file also needs persistence
    - Options:
      a. **Use PostgreSQL for medical articles too** (recommended - requires schema migration)
-     b. **Use Render Disk** (paid feature) to persist SQLite file
+     b. **Use Render Disk** (paid feature) to persist SQLite file - see below
      c. **Use external storage** (S3, etc.) for the SQLite file
 
-**Alternative: Keep SQLite but Accept Data Loss**
+**Option B: Use Render Persistent Disk (Paid Tier) - Keep SQLite**
+
+If you upgrade to Render's paid tier, you can use persistent disks to keep SQLite databases:
+
+1. **Upgrade to Paid Tier:**
+   - Render Starter plan ($7/month) or higher
+   - Includes persistent disk storage
+
+2. **Attach Persistent Disk:**
+   - In Render dashboard → Your service → "Disks" tab
+   - Click "Attach Disk"
+   - **Mount Path**: `/data` (or your preferred path)
+   - **Size**: Start with 10GB (can increase later, not decrease)
+   - Save
+
+3. **Configure Database Paths:**
+   - Set environment variable in your service:
+     ```
+     PERSISTENT_DATA_PATH=/data
+     ```
+   - Update `DATABASE_URL` to use persistent path:
+     ```
+     DATABASE_URL=sqlite:////data/app.db
+     ```
+   - The code will automatically use this path (see below)
+
+4. **Update Code (if needed):**
+   - The current code uses relative paths
+   - We'll update it to check for `PERSISTENT_DATA_PATH` environment variable
+   - If set, databases will be stored on the persistent disk
+
+5. **Important Limitations:**
+   - ⚠️ **Single Instance Only**: Services with disks can't scale horizontally
+   - ⚠️ **No Zero-Downtime Deploys**: Must stop service before deploying
+   - ✅ **Data Persists**: All data survives redeploys and restarts
+
+**Alternative: Keep SQLite but Accept Data Loss (Free Tier)**
 - If you're okay with data being reset on redeploy
 - Good for development/testing only
 - Not recommended for production with real users

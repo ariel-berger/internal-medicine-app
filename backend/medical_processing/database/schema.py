@@ -1,10 +1,24 @@
 import sqlite3
 from datetime import datetime
+import os
 from ..config import DATABASE_PATH
+
+def get_database_path():
+    """Get the database path, using persistent disk if available (Render paid tier)."""
+    persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
+    if persistent_data_path:
+        # Use persistent disk for database
+        return os.path.join(persistent_data_path, 'medical_articles.db')
+    elif os.path.isabs(DATABASE_PATH):
+        # Use absolute path if provided
+        return DATABASE_PATH
+    else:
+        # Use relative path (default)
+        return DATABASE_PATH
 
 def create_database():
     """Create the database and tables for storing articles."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     # Articles table
@@ -87,7 +101,7 @@ def create_database():
 
 def migrate_database():
     """Migrate existing database to remove disease_prevalence and practice_changing_potential columns."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -159,7 +173,7 @@ def migrate_database():
 
 def add_rule_based_scoring_columns():
     """Add new rule-based scoring columns to existing enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -192,7 +206,7 @@ def add_rule_based_scoring_columns():
 
 def add_new_penalty_scoring_columns():
     """Add new penalty and bonus scoring columns to existing enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -230,7 +244,7 @@ def add_new_penalty_scoring_columns():
 
 def remove_guideline_scoring_columns():
     """Remove guideline scoring columns from enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -310,7 +324,7 @@ def remove_guideline_scoring_columns():
 
 def rename_rejection_reason_to_reason():
     """Rename rejection_reason column to reason in enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -394,7 +408,7 @@ def rename_rejection_reason_to_reason():
 
 def add_temporality_points_column():
     """Add temporality_points column to existing enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -417,38 +431,60 @@ def add_temporality_points_column():
         conn.close()
 
 def migrate_penalty_scoring_columns():
-    """Add new penalty scoring columns: prevention_penalty_points and biologic_penalty_points."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    """
+    Migrate penalty scoring columns from old names to new names.
+    """
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
-        # Check if the new columns already exist
+        # Check if the old columns exist
         cursor.execute("PRAGMA table_info(enhanced_classifications)")
         columns = [column[1] for column in cursor.fetchall()]
         
-        columns_to_add = ['prevention_penalty_points', 'biologic_penalty_points']
-        missing_columns = [col for col in columns_to_add if col not in columns]
+        # Check if migration is needed
+        old_cols = ['prevention_penalty_points', 'biologic_penalty_points']
+        new_cols = ['screening_penalty_points', 'scores_penalty_points', 'subanalysis_penalty_points']
         
-        if missing_columns:
-            print(f"Adding missing penalty scoring columns: {missing_columns}")
+        needs_migration = any(col in columns for col in old_cols) and not all(col in columns for col in new_cols)
+        
+        if needs_migration:
+            print("Migrating penalty scoring columns...")
             
-            for column in missing_columns:
-                cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {column} INTEGER DEFAULT 0')
+            # Add new columns if they don't exist
+            for col in new_cols:
+                if col not in columns:
+                    cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {col} INTEGER DEFAULT 0')
+            
+            # Copy data from old columns to new columns if they exist
+            if 'prevention_penalty_points' in columns:
+                cursor.execute('''
+                    UPDATE enhanced_classifications 
+                    SET screening_penalty_points = prevention_penalty_points
+                    WHERE screening_penalty_points = 0 AND prevention_penalty_points != 0
+                ''')
+            
+            if 'biologic_penalty_points' in columns:
+                cursor.execute('''
+                    UPDATE enhanced_classifications 
+                    SET scores_penalty_points = biologic_penalty_points
+                    WHERE scores_penalty_points = 0 AND biologic_penalty_points != 0
+                ''')
             
             conn.commit()
-            print("SUCCESS: Successfully added new penalty scoring columns")
+            print("SUCCESS: Successfully migrated penalty scoring columns")
         else:
-            print("SUCCESS: New penalty scoring columns already exist")
+            print("SUCCESS: No migration needed - penalty scoring columns are up to date")
             
     except sqlite3.Error as e:
-        print(f"ERROR: Error adding new penalty scoring columns: {e}")
+        print(f"ERROR: Error migrating penalty scoring columns: {e}")
         conn.rollback()
     finally:
         conn.close()
 
 def add_hidden_from_dashboard_column():
     """Add hidden_from_dashboard column to enhanced_classifications table."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     try:
@@ -472,16 +508,7 @@ def add_hidden_from_dashboard_column():
 
 def get_connection():
     """Get database connection."""
-    import os
-    # Use absolute path - same approach as app.py
-    # DATABASE_PATH is relative, so resolve it relative to the backend directory
-    if os.path.isabs(DATABASE_PATH):
-        db_path = DATABASE_PATH
-    else:
-        # Resolve relative to backend directory (where medical_articles.db actually is)
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        db_path = os.path.join(backend_dir, DATABASE_PATH)
-    return sqlite3.connect(db_path)
+    return sqlite3.connect(get_database_path())
 
 if __name__ == "__main__":
     create_database()

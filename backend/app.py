@@ -26,7 +26,15 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-string-change-in-production')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
+# Use persistent disk path if available (Render paid tier)
+persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
+if persistent_data_path:
+    # Use persistent disk for database
+    db_path = os.path.join(persistent_data_path, 'app.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
+else:
+    # Default to relative path (ephemeral on free tier)
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
@@ -107,7 +115,14 @@ def get_medical_connection():
     """Get connection to medical articles database"""
     import sqlite3
     import os
-    db_path = os.path.join(os.path.dirname(__file__), 'medical_articles.db')
+    # Use persistent disk path if available (Render paid tier)
+    persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
+    if persistent_data_path:
+        db_path = os.path.join(persistent_data_path, 'medical_articles.db')
+    else:
+        # Default to relative path (ephemeral on free tier)
+        db_path = os.path.join(os.path.dirname(__file__), 'medical_articles.db')
+    
     if os.path.exists(db_path):
         return sqlite3.connect(db_path)
     return None
