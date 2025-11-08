@@ -53,8 +53,9 @@ export default function Dashboard() {
       
       // Load medical articles (all relevant articles by ranking score, excluding hidden ones for dashboard)
       console.log("Loading medical articles...");
+      let medicalArticlesData = [];
       try {
-        const medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
+        medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
           limit: 50, 
           sort: 'ranking_score',
           excludeHidden: true  // Exclude hidden articles from dashboard
@@ -62,14 +63,13 @@ export default function Dashboard() {
         console.log("Loaded medical articles:", medicalArticlesData.length);
         console.log("First article sample:", medicalArticlesData[0]);
         setMedicalArticles(medicalArticlesData);
-        // Load persisted article statuses for dashboard
-        setArticleStatuses(getArticleStatusMap());
       } catch (e) {
         console.error("Failed to load medical articles:", e);
         // If user is not logged in, try to load without authentication
         if (e.message.includes('401') || e.message.includes('403')) {
           console.log("User not authenticated, medical articles require login");
           setMedicalArticles([]);
+          medicalArticlesData = [];
         } else {
           throw e;
         }
@@ -112,16 +112,40 @@ export default function Dashboard() {
       }, {});
 
       const statusMap = new Map(userStatuses.map(s => [s.study_id, s]));
+      
+      // Load article statuses: merge backend statuses with local storage for backward compatibility
+      const localArticleStatuses = getArticleStatusMap();
+      const backendArticleStatuses = new Map(
+        userStatuses
+          .filter(s => s.article_id) // Filter for medical article statuses
+          .map(s => [s.article_id, s])
+      );
+      
+      // Merge: backend takes precedence, but include local if not in backend
+      const mergedArticleStatuses = new Map(localArticleStatuses);
+      for (const [articleId, status] of backendArticleStatuses) {
+        mergedArticleStatuses.set(articleId, status);
+      }
+      setArticleStatuses(mergedArticleStatuses);
 
       // Comments removed
 
-      const readCounts = allStatuses
-        .filter(s => s.status === 'read')
+      // Count library additions (both "read" and "want_to_read" statuses) for both studies and articles
+      const libraryCounts = allStatuses
+        .filter(s => s.status === 'read' || s.status === 'want_to_read')
         .reduce((acc, s) => {
-          acc[s.study_id] = (acc[s.study_id] || 0) + 1;
+          // Count by study_id for regular studies
+          if (s.study_id) {
+            acc[`study_${s.study_id}`] = (acc[`study_${s.study_id}`] || 0) + 1;
+          }
+          // Count by article_id for medical articles
+          if (s.article_id) {
+            acc[`article_${s.article_id}`] = (acc[`article_${s.article_id}`] || 0) + 1;
+          }
           return acc;
         }, {});
 
+      // Fetch all studies for mapping
       let allStudiesForTrending = [];
       try {
         allStudiesForTrending = await Study.list(); // Fetch all to map trending IDs
@@ -129,15 +153,65 @@ export default function Dashboard() {
         console.log("Failed to load all studies for trending:", e);
       }
       const studyMap = new Map(allStudiesForTrending.map(s => [s.id, s]));
+      
+      // Create a map of medical articles by ID
+      const articleMap = new Map(medicalArticlesData.map(a => [a.id, a]));
 
-      const topThree = Object.entries(readCounts)
-        .sort(([, countA], [, countB]) => countB - countA)
-        .slice(0, 3) // Reduce to top 3
-        .map(([studyId, count]) => ({
-          ...studyMap.get(studyId),
-          readCount: count
-        }))
-        .filter(Boolean);
+      // Combine studies and articles with their library counts
+      const trendingItems = [];
+      
+      // Add regular studies
+      Object.entries(libraryCounts)
+        .filter(([key]) => key.startsWith('study_'))
+        .forEach(([key, count]) => {
+          const studyId = parseInt(key.replace('study_', ''));
+          const study = studyMap.get(studyId);
+          if (study) {
+            trendingItems.push({
+              ...study,
+              libraryCount: count,
+              isMedicalArticle: false
+            });
+          }
+        });
+      
+      // Add medical articles
+      Object.entries(libraryCounts)
+        .filter(([key]) => key.startsWith('article_'))
+        .forEach(([key, count]) => {
+          const articleId = parseInt(key.replace('article_', ''));
+          const article = articleMap.get(articleId);
+          if (article) {
+            // Convert article to study format for compatibility
+            trendingItems.push({
+              ...article,
+              title: article.title,
+              url: article.url || article.doi ? `https://doi.org/${article.doi}` : null,
+              libraryCount: count,
+              isMedicalArticle: true
+            });
+          }
+        });
+
+      // Sort by library count (descending) and take top 3
+      // Prioritize articles (medical articles) over regular studies if counts are equal
+      const topThree = trendingItems
+        .sort((a, b) => {
+          // First sort by library count
+          if (b.libraryCount !== a.libraryCount) {
+            return b.libraryCount - a.libraryCount;
+          }
+          // If counts are equal, prioritize medical articles
+          if (a.isMedicalArticle !== b.isMedicalArticle) {
+            return a.isMedicalArticle ? -1 : 1;
+          }
+          return 0;
+        })
+        .slice(0, 3)
+        .map(item => ({
+          ...item,
+          readCount: item.libraryCount // Keep readCount for backward compatibility with TopStudies component
+        }));
 
       setTopThreeStudies(topThree);
 
@@ -187,18 +261,94 @@ export default function Dashboard() {
     });
   };
 
-  const handleArticleStatusChange = (articleId, newStatusRecord) => {
-    setArticleStatuses(prevMap => {
-      const newMap = new Map(prevMap);
+  const handleArticleStatusChange = async (articleId, newStatusRecord) => {
+    // Update local storage for backward compatibility
+    if (newStatusRecord) {
+      setArticleStatus(articleId, newStatusRecord.status);
+    } else {
+      setArticleStatus(articleId, null);
+    }
+    
+    // Also save to backend for cross-user trending
+    try {
+      const existingStatus = articleStatuses.get(articleId);
       if (newStatusRecord) {
-        newMap.set(articleId, newStatusRecord);
-        setArticleStatus(articleId, newStatusRecord.status);
+        if (existingStatus && existingStatus.id) {
+          // Update existing backend record
+          try {
+            const updatedRecord = await UserStudyStatus.update(existingStatus.id, { status: newStatusRecord.status });
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, updatedRecord);
+              return newMap;
+            });
+          } catch (e) {
+            console.log("Failed to update in backend, trying to create:", e);
+            // If update fails, try creating
+            try {
+              const newRecord = await UserStudyStatus.create({ article_id: articleId, status: newStatusRecord.status });
+              setArticleStatuses(prevMap => {
+                const newMap = new Map(prevMap);
+                newMap.set(articleId, newRecord);
+                return newMap;
+              });
+            } catch (createError) {
+              console.error("Failed to create in backend:", createError);
+              // Still update local state even if backend fails
+              setArticleStatuses(prevMap => {
+                const newMap = new Map(prevMap);
+                newMap.set(articleId, newStatusRecord);
+                return newMap;
+              });
+            }
+          }
+        } else {
+          // Create new backend record
+          try {
+            const newRecord = await UserStudyStatus.create({ article_id: articleId, status: newStatusRecord.status });
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, newRecord);
+              return newMap;
+            });
+          } catch (e) {
+            console.error("Failed to create in backend:", e);
+            // Still update local state even if backend fails
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, newStatusRecord);
+              return newMap;
+            });
+          }
+        }
       } else {
-        newMap.delete(articleId);
-        setArticleStatus(articleId, null);
+        // Remove status
+        if (existingStatus && existingStatus.id) {
+          try {
+            await UserStudyStatus.delete(existingStatus.id);
+          } catch (e) {
+            console.log("Failed to delete from backend (may not exist):", e);
+          }
+        }
+        setArticleStatuses(prevMap => {
+          const newMap = new Map(prevMap);
+          newMap.delete(articleId);
+          return newMap;
+        });
       }
-      return newMap;
-    });
+    } catch (e) {
+      console.error("Error updating article status in backend:", e);
+      // Still update local state even if backend fails
+      setArticleStatuses(prevMap => {
+        const newMap = new Map(prevMap);
+        if (newStatusRecord) {
+          newMap.set(articleId, newStatusRecord);
+        } else {
+          newMap.delete(articleId);
+        }
+        return newMap;
+      });
+    }
   };
   
   // Comments removed

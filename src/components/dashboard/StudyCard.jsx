@@ -50,13 +50,51 @@ function ReadingStatusManager({ study, statusRecord, onStatusChange }) {
     setIsUpdating(true);
     try {
       if (study.isMedicalArticle) {
-        // Persist locally for medical articles
+        // Persist both locally and in backend for medical articles
+        // Local storage for backward compatibility and offline support
+        setArticleStatus(study.id, newStatus);
+        
+        // Backend persistence for cross-user trending
         if (statusRecord && statusRecord.status === newStatus) {
+          // Remove status if clicking the same status
+          try {
+            if (statusRecord.id) {
+              await UserStudyStatus.delete(statusRecord.id);
+            }
+          } catch (e) {
+            console.log("Failed to delete from backend (may not exist):", e);
+          }
           setArticleStatus(study.id, null);
           onStatusChange(study.id, null);
         } else {
-          setArticleStatus(study.id, newStatus);
-          onStatusChange(study.id, { status: newStatus });
+          // Update or create backend record
+          if (statusRecord && statusRecord.id) {
+            try {
+              const updatedRecord = await UserStudyStatus.update(statusRecord.id, { status: newStatus });
+              onStatusChange(study.id, updatedRecord);
+            } catch (e) {
+              console.log("Failed to update in backend, trying to create:", e);
+              // If update fails, try creating
+              try {
+                const newRecord = await UserStudyStatus.create({ article_id: study.id, status: newStatus });
+                onStatusChange(study.id, newRecord);
+              } catch (createError) {
+                console.error("Failed to create in backend:", createError);
+                // Still update local state even if backend fails
+                onStatusChange(study.id, { status: newStatus });
+              }
+            }
+          } else {
+            // Create new backend record
+            try {
+              const newRecord = await UserStudyStatus.create({ article_id: study.id, status: newStatus });
+              onStatusChange(study.id, newRecord);
+            } catch (e) {
+              console.error("Failed to create in backend:", e);
+              // Still update local state even if backend fails
+              onStatusChange(study.id, { status: newStatus });
+            }
+          }
         }
       } else {
         // Backend persistence for user-added studies
@@ -85,7 +123,16 @@ function ReadingStatusManager({ study, statusRecord, onStatusChange }) {
     setIsUpdating(true);
     try {
       if (study.isMedicalArticle) {
+        // Remove from local storage
         setArticleStatus(study.id, null);
+        // Remove from backend if it exists
+        if (statusRecord.id) {
+          try {
+            await UserStudyStatus.delete(statusRecord.id);
+          } catch (e) {
+            console.log("Failed to delete from backend (may not exist):", e);
+          }
+        }
         onStatusChange(study.id, null);
       } else {
         await UserStudyStatus.delete(statusRecord.id);
