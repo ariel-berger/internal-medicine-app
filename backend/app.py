@@ -32,16 +32,41 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 
-# Configure CORS - restrict origins in production
-if os.getenv('FLASK_ENV') == 'production':
-    frontend_url = os.getenv('FRONTEND_URL', '')
-    if frontend_url:
-        CORS(app, origins=[frontend_url])
-    else:
-        # If FRONTEND_URL not set, allow all (not ideal but won't break)
-        CORS(app)
-else:
-    CORS(app)  # Allow all origins in development
+# Configure CORS - allow frontend origins
+frontend_urls = []
+
+# Add Vercel frontend URL (default if FRONTEND_URL not set)
+vercel_frontend = os.getenv('FRONTEND_URL', '').strip()
+if not vercel_frontend:
+    vercel_frontend = 'https://internal-medicine-app.vercel.app'
+if vercel_frontend:
+    frontend_urls.append(vercel_frontend)
+
+# Add any additional frontend URLs from environment
+additional_urls = os.getenv('FRONTEND_URLS', '').strip()
+if additional_urls:
+    frontend_urls.extend([url.strip() for url in additional_urls.split(',') if url.strip()])
+
+# Always allow localhost for development
+frontend_urls.extend([
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000'
+])
+
+# Remove duplicates while preserving order
+seen = set()
+frontend_urls = [url for url in frontend_urls if url and url not in seen and not seen.add(url)]
+
+# Configure CORS with explicit settings for preflight requests
+CORS(app, 
+     origins=frontend_urls if frontend_urls else ['*'],  # Allow all if no URLs specified
+     supports_credentials=True,
+     allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+     expose_headers=['Content-Type', 'Authorization'],
+     max_age=3600)  # Cache preflight for 1 hour
 
 # (moved db.create_all to the end of the file, after models are defined)
 
