@@ -193,9 +193,9 @@ export default function Dashboard() {
           }
         });
 
-      // Sort by library count (descending) and take top 3
+      // Sort by library count (descending) and take top 2
       // Prioritize articles (medical articles) over regular studies if counts are equal
-      const topThree = trendingItems
+      const topTwo = trendingItems
         .sort((a, b) => {
           // First sort by library count
           if (b.libraryCount !== a.libraryCount) {
@@ -207,13 +207,13 @@ export default function Dashboard() {
           }
           return 0;
         })
-        .slice(0, 3)
+        .slice(0, 2)
         .map(item => ({
           ...item,
           readCount: item.libraryCount // Keep readCount for backward compatibility with TopStudies component
         }));
 
-      setTopThreeStudies(topThree);
+      setTopThreeStudies(topTwo);
 
       // Custom sort for dashboard: Key > Major > Recent
       studies.sort((a, b) => {

@@ -167,9 +167,10 @@ class KeyArticle(db.Model):
 
 class UserStudyStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    study_id = db.Column(db.Integer, db.ForeignKey('study.id'), nullable=False)
+    study_id = db.Column(db.Integer, db.ForeignKey('study.id'), nullable=True)  # Nullable for medical articles
+    article_id = db.Column(db.Integer, nullable=True)  # For medical articles
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    status = db.Column(db.String(50), nullable=False)  # 'read', 'to_read', 'favorite', etc.
+    status = db.Column(db.String(50), nullable=False)  # 'read', 'want_to_read', 'favorite', etc.
     created_by = db.Column(db.String(200), nullable=False)
     created_date = db.Column(db.DateTime, default=db.func.current_timestamp())
     
@@ -177,6 +178,7 @@ class UserStudyStatus(db.Model):
         return {
             'id': self.id,
             'study_id': self.study_id,
+            'article_id': self.article_id,
             'user_id': self.user_id,
             'status': self.status,
             'created_by': self.created_by,
@@ -380,54 +382,52 @@ def get_studies():
     user_id = get_jwt_identity()
     
     try:
-        # Get studies with impact factors from journal_impact_scores table
+        # Get studies from Flask database and enrich with impact factors from medical database
+        studies = Study.query.filter_by(user_id=int(user_id)).all()
+        
+        # Try to get impact factors from journal_impact_scores if medical database is available
         conn = get_medical_connection()
-        if not conn:
-            # Fallback to original query if medical database not available
-            studies = Study.query.filter_by(user_id=int(user_id)).all()
-            return jsonify([study.to_dict() for study in studies])
-        cursor = conn.cursor()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                journal_impact_map = {}
+                
+                # Get impact factors for all unique journals
+                unique_journals = list(set([s.journal for s in studies if s.journal]))
+                if unique_journals:
+                    placeholders = ','.join(['?' for _ in unique_journals])
+                    cursor.execute(f"""
+                        SELECT journal_name, impact_factor 
+                        FROM journal_impact_scores 
+                        WHERE journal_name IN ({placeholders})
+                    """, unique_journals)
+                    for row in cursor.fetchall():
+                        journal_impact_map[row[0].lower().strip()] = row[1]
+                
+                conn.close()
+                
+                # Enrich studies with journal impact factors
+                result = []
+                for study in studies:
+                    study_dict = study.to_dict()
+                    journal_key = study.journal.lower().strip() if study.journal else None
+                    if journal_key and journal_key in journal_impact_map:
+                        journal_impact = journal_impact_map[journal_key]
+                        study_dict['impact_factor'] = journal_impact if journal_impact else study.impact_factor
+                        study_dict['is_major_journal'] = study.is_major_journal or (journal_impact and journal_impact >= 25)
+                    result.append(study_dict)
+                
+                return jsonify(result)
+            except Exception as e:
+                print(f"Error enriching studies with impact factors: {e}")
+                conn.close()
         
-        # Query to get studies with impact factors
-        query = """
-            SELECT s.id, s.title, s.authors, s.journal, s.year, s.specialty, 
-                   s.abstract, s.doi, s.impact_factor, s.is_major_journal, 
-                   s.created_at, jis.impact_factor as journal_impact_factor
-            FROM study s
-            LEFT JOIN journal_impact_scores jis ON LOWER(TRIM(s.journal)) = LOWER(TRIM(jis.journal_name))
-            WHERE s.user_id = ?
-            ORDER BY s.created_at DESC
-        """
-        
-        cursor.execute(query, (int(user_id),))
-        studies_data = cursor.fetchall()
-        
-        # Format results
-        studies = []
-        for study in studies_data:
-            # Use journal impact factor if available, otherwise use stored impact factor
-            impact_factor = study[11] if study[11] is not None else study[8]
-            
-            studies.append({
-                'id': study[0],
-                'title': study[1],
-                'authors': study[2],
-                'journal': study[3],
-                'year': study[4],
-                'specialty': study[5],
-                'abstract': study[6],
-                'doi': study[7],
-                'impact_factor': impact_factor,
-                'is_major_journal': study[9] or (impact_factor and impact_factor >= 25),
-                'createdAt': study[10].isoformat() if study[10] else None
-            })
-        
-        conn.close()
-        return jsonify(studies)
+        # Fallback: return studies without enrichment
+        return jsonify([study.to_dict() for study in studies])
         
     except Exception as e:
         # Fallback to original query if there's an error
-        print(f"Error getting studies with impact factors: {e}")
+        print(f"Error getting studies: {e}")
         studies = Study.query.filter_by(user_id=int(user_id)).all()
         return jsonify([study.to_dict() for study in studies])
 
@@ -1072,12 +1072,16 @@ def create_user_study_status():
 
         data = request.get_json() or {}
         study_id = data.get('study_id')
+        article_id = data.get('article_id')
         status = data.get('status')
-        if not study_id or not status:
-            return jsonify({'error': 'study_id and status are required'}), 400
+        
+        # Either study_id or article_id must be provided
+        if (not study_id and not article_id) or not status:
+            return jsonify({'error': 'Either study_id or article_id, and status are required'}), 400
 
         record = UserStudyStatus(
             study_id=study_id,
+            article_id=article_id,
             user_id=current_user_id,
             status=status,
             created_by=user.email,
@@ -1271,7 +1275,22 @@ try:
             db.session.commit()
         except Exception:
             db.session.rollback()
-        # Comment article_id migration removed
+        # Migrate UserStudyStatus to support article_id
+        try:
+            # Check if article_id column exists
+            result = db.session.execute("PRAGMA table_info(user_study_status)")
+            columns = [row[1] for row in result]
+            if 'article_id' not in columns:
+                # SQLite doesn't support ALTER TABLE to modify constraints, so we need to recreate
+                # For now, just add the column (SQLite allows adding nullable columns)
+                db.session.execute("ALTER TABLE user_study_status ADD COLUMN article_id INTEGER")
+                db.session.commit()
+                print("Added article_id column to user_study_status table")
+            # Make study_id nullable if it's not already (SQLite limitation - can't modify constraints easily)
+            # This will be handled by create_all() on new tables
+        except Exception as e:
+            db.session.rollback()
+            print(f"Warning: UserStudyStatus migration failed: {e}")
         if ADMIN_EMAILS:
             for admin_email in ADMIN_EMAILS:
                 u = User.query.filter_by(email=admin_email).first()
