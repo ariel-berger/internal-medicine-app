@@ -65,6 +65,10 @@ A modern medical dashboard built with React frontend and Python Flask backend, f
 
 These commands assume PowerShell on Windows 10/11.
 
+**Python Location on this system:**
+- Python 3.12 is installed at: `C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe`
+- Scripts automatically detect this path, or you can use it directly
+
 1) Install Python (if missing) and create a virtual environment
 
 ```powershell
@@ -101,14 +105,23 @@ ANTHROPIC_API_KEY=your-key   # or GOOGLE_API_KEY=your-key
 # Go to backend
 cd backend
 
-# Score specific PMIDs (single or multiple)
+# Option 1: Using helper script (recommended - auto-detects Python)
+.\scripts\run_python.ps1 scripts\score_pmids.py 41183339 41183330
+.\scripts\run_python.ps1 scripts\delete_articles_by_date.py 2025-10-29 --yes
+.\scripts\run_python.ps1 scripts\export_relevant_articles_weekly.py
+.\scripts\run_python.ps1 medical_processing\fetch_and_classify_weekly.py
+
+# Option 2: Using system Python directly (if in PATH)
+python scripts\score_pmids.py 41183339 41183330
+python scripts\delete_articles_by_date.py 2025-10-29 --yes
+
+# Option 3: Using venv Python (if created)
 & "..\.venv\Scripts\python.exe" scripts\score_pmids.py 41183339 41183330
-
-# Export relevant articles from last 2 weeks to CSV
 & "..\.venv\Scripts\python.exe" scripts\export_relevant_articles_weekly.py
-
-# Weekly collection and classification (last 7 days)
 & "..\.venv\Scripts\python.exe" medical_processing\fetch_and_classify_weekly.py
+
+# Option 4: Using full path to system Python
+& "C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe" scripts\score_pmids.py 41183339 41183330
 ```
 
 Notes:
