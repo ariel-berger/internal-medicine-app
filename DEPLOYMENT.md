@@ -106,10 +106,45 @@ The medical articles library path in `requirements.txt` is commented out. If you
 - Or adjust the path for your deployment environment
 - Or install it separately on Render
 
-### Database
-- Currently using SQLite (works for small projects)
-- For production with multiple users, consider PostgreSQL (Render offers free PostgreSQL)
-- To migrate: Change `DATABASE_URL` to PostgreSQL connection string
+### Database Persistence ⚠️ IMPORTANT
+
+**SQLite on Render Free Tier:**
+- ⚠️ **Data Loss Warning**: Render's free tier uses **ephemeral storage**, meaning SQLite databases (`app.db` and `medical_articles.db`) are **lost on every redeploy or restart**
+- This affects:
+  - User accounts and passwords
+  - "Marked as read" / "Want to read" statuses
+  - "Hide from dashboard" flags
+  - All user-generated data
+
+**Solution: Use PostgreSQL (Recommended)**
+
+1. **Create PostgreSQL Database on Render:**
+   - In Render dashboard: "New +" → "PostgreSQL"
+   - Name it (e.g., `medicaldash-db`)
+   - Copy the **Internal Database URL** (starts with `postgresql://`)
+
+2. **Update Environment Variables:**
+   - In your backend service settings, update `DATABASE_URL`:
+     ```
+     DATABASE_URL=postgresql://user:password@hostname:5432/dbname
+     ```
+   - Use the **Internal Database URL** from Render (not external)
+
+3. **Update Code for PostgreSQL:**
+   - Install PostgreSQL adapter: Add `psycopg2-binary==2.9.9` to `requirements.txt`
+   - The code should work with PostgreSQL without changes (SQLAlchemy handles it)
+
+4. **For Medical Articles Database:**
+   - The `medical_articles.db` file also needs persistence
+   - Options:
+     a. **Use PostgreSQL for medical articles too** (recommended - requires schema migration)
+     b. **Use Render Disk** (paid feature) to persist SQLite file
+     c. **Use external storage** (S3, etc.) for the SQLite file
+
+**Alternative: Keep SQLite but Accept Data Loss**
+- If you're okay with data being reset on redeploy
+- Good for development/testing only
+- Not recommended for production with real users
 
 ### Free Tier Limitations
 

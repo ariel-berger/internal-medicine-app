@@ -124,12 +124,69 @@ export default function Dashboard() {
           .map(s => [s.article_id, s])
       );
       
-      // Merge: backend takes precedence, but include local if not in backend
-      const mergedArticleStatuses = new Map(localArticleStatuses);
-      for (const [articleId, status] of backendArticleStatuses) {
-        mergedArticleStatuses.set(articleId, status);
+      // Sync localStorage data to backend (one-time migration)
+      // This ensures data persists across deployments
+      if (currentUser && localArticleStatuses.size > 0) {
+        const syncPromises = [];
+        for (const [articleId, localStatus] of localArticleStatuses) {
+          // Only sync if not already in backend
+          if (!backendArticleStatuses.has(articleId) && localStatus?.status) {
+            syncPromises.push(
+              UserStudyStatus.create({ 
+                article_id: articleId, 
+                status: localStatus.status 
+              }).catch(e => {
+                console.log(`Failed to sync article ${articleId} to backend:`, e);
+                return null;
+              })
+            );
+          }
+        }
+        if (syncPromises.length > 0) {
+          console.log(`Syncing ${syncPromises.length} article statuses from localStorage to backend...`);
+          const syncedStatuses = await Promise.allSettled(syncPromises);
+          const successful = syncedStatuses.filter(s => s.status === 'fulfilled' && s.value).length;
+          console.log(`Successfully synced ${successful} article statuses to backend`);
+          
+          // Reload user statuses after sync
+          try {
+            const updatedUserStatuses = await UserStudyStatus.filter({ created_by: currentUser.email }, "-created_date");
+            const updatedBackendArticleStatuses = new Map(
+              updatedUserStatuses
+                .filter(s => s.article_id)
+                .map(s => [s.article_id, s])
+            );
+            // Merge with local (backend takes precedence now)
+            const mergedArticleStatuses = new Map(localArticleStatuses);
+            for (const [articleId, status] of updatedBackendArticleStatuses) {
+              mergedArticleStatuses.set(articleId, status);
+            }
+            setArticleStatuses(mergedArticleStatuses);
+          } catch (e) {
+            console.error("Failed to reload statuses after sync:", e);
+            // Fallback to original merge
+            const mergedArticleStatuses = new Map(localArticleStatuses);
+            for (const [articleId, status] of backendArticleStatuses) {
+              mergedArticleStatuses.set(articleId, status);
+            }
+            setArticleStatuses(mergedArticleStatuses);
+          }
+        } else {
+          // No sync needed, just merge
+          const mergedArticleStatuses = new Map(localArticleStatuses);
+          for (const [articleId, status] of backendArticleStatuses) {
+            mergedArticleStatuses.set(articleId, status);
+          }
+          setArticleStatuses(mergedArticleStatuses);
+        }
+      } else {
+        // No user or no local data, just merge
+        const mergedArticleStatuses = new Map(localArticleStatuses);
+        for (const [articleId, status] of backendArticleStatuses) {
+          mergedArticleStatuses.set(articleId, status);
+        }
+        setArticleStatuses(mergedArticleStatuses);
       }
-      setArticleStatuses(mergedArticleStatuses);
 
       // Comments removed
 

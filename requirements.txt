@@ -5,6 +5,8 @@ flask-cors==4.0.0
 # Database and ORM
 sqlalchemy>=2.0.25
 flask-sqlalchemy==3.1.1
+# PostgreSQL adapter (required if using PostgreSQL instead of SQLite)
+psycopg2-binary==2.9.9
 
 # Authentication
 flask-jwt-extended==4.6.0
