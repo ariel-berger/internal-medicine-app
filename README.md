@@ -61,6 +61,60 @@ A modern medical dashboard built with React frontend and Python Flask backend, f
 
 5. Open [http://localhost:5173](http://localhost:5173) in your browser
 
+## Windows (PowerShell) quick start
+
+These commands assume PowerShell on Windows 10/11.
+
+1) Install Python (if missing) and create a virtual environment
+
+```powershell
+# Install Python via winget (if needed)
+winget install Python.Python.3.12 --silent
+
+# From the repository root
+cd "medical dashboard/internal-medicine-app"
+
+# Create and activate venv
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install Python deps
+pip install -r requirements.txt
+```
+
+2) Encoding fix for Unicode output (optional but recommended)
+
+```powershell
+$env:PYTHONIOENCODING = 'utf-8'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+```
+
+3) Provide your API key(s) in a `.env` file (project root or `backend/.env`)
+
+```env
+ANTHROPIC_API_KEY=your-key   # or GOOGLE_API_KEY=your-key
+```
+
+4) Run backend utilities (examples)
+
+```powershell
+# Go to backend
+cd backend
+
+# Score specific PMIDs (single or multiple)
+& "..\.venv\Scripts\python.exe" scripts\score_pmids.py 41183339 41183330
+
+# Export relevant articles from last 2 weeks to CSV
+& "..\.venv\Scripts\python.exe" scripts\export_relevant_articles_weekly.py
+
+# Weekly collection and classification (last 7 days)
+& "..\.venv\Scripts\python.exe" medical_processing\fetch_and_classify_weekly.py
+```
+
+Notes:
+- Use `;` to chain commands in PowerShell instead of `&&`.
+- The code auto-loads `.env` from `backend/` or the project root.
+
 ## Available Scripts
 
 ### Frontend
@@ -116,17 +170,21 @@ A modern medical dashboard built with React frontend and Python Flask backend, f
 └── DEPLOYMENT.md          # Deployment guide
 ```
 
-## Medical Articles Library Integration
+## Medical Articles Processing
 
-The backend integrates with a custom medical articles library that provides:
-- **ArticleDatabase**: Database operations for medical articles
-- **MedicalArticleClassifier**: AI-powered article classification
-- **PubMedClient**: PubMed API integration for article collection
+The backend includes an internal processing module providing:
+- **ArticleDatabase** (SQLite operations)
+- **MedicalArticleClassifier** (unified inclusion-based filtering and scoring)
+- **PubMedClient** (PubMed collection)
+
+Unified classification flow:
+- `filter_article(...)` → `classify_article_enhanced(...)`
 
 ## Documentation
 
 - [Setup Guide](SETUP.md) - Detailed setup instructions
 - [Backend Documentation](backend/README.md) - Backend-specific documentation
+- [Scripts Guide](backend/scripts/README.md) - How to run scoring/export/weekly scripts
 
 ## Contributing
 

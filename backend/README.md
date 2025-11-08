@@ -27,6 +27,35 @@ python run.py
 
 The server will start on `http://localhost:5000`
 
+## Windows (PowerShell) notes
+
+PowerShell differs slightly from bash:
+
+```powershell
+# From repo root
+cd backend
+
+# Create and activate venv
+py -3.12 -m venv ..\.venv
+.\..\.venv\Scripts\Activate.ps1
+
+# Install deps
+pip install -r ..\requirements.txt
+
+# Optional: ensure UTF-8 output in the console
+$env:PYTHONIOENCODING = 'utf-8'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Run utilities
+& "..\.venv\Scripts\python.exe" scripts\score_pmids.py 41183339
+& "..\.venv\Scripts\python.exe" scripts\export_relevant_articles_weekly.py
+& "..\.venv\Scripts\python.exe" medical_processing\fetch_and_classify_weekly.py
+```
+
+Tips:
+- Use `;` (not `&&`) to chain commands.
+- `.env` can be placed in `backend\` or the project root.
+
 ## API Endpoints
 
 ### Authentication
@@ -49,7 +78,7 @@ The server will start on `http://localhost:5000`
 
 ## Environment Variables
 
-Create a `.env` file with the following variables:
+Create a `.env` file with the following variables (add at least one provider key):
 
 ```
 SECRET_KEY=your-secret-key-change-in-production
@@ -57,13 +86,21 @@ JWT_SECRET_KEY=jwt-secret-string-change-in-production
 DATABASE_URL=sqlite:///medical_articles.db
 FLASK_ENV=development
 FLASK_DEBUG=True
+
+# LLM providers (one is sufficient)
+ANTHROPIC_API_KEY=your-anthropic-key
+# or
+GOOGLE_API_KEY=your-google-key
 ```
 
-## Medical Articles Library
+## Medical Articles Processing
 
-The backend integrates with your custom medical articles library located at:
-`/Users/Ariel.Berger/Projects/medical_articles_lib`
+The backend includes a built-in processing module at `backend/medical_processing/`:
 
-This library provides:
-- MedicalArticlesDB: Database operations for medical articles
-- ArticleProcessor: Processing and analysis of medical articles
+- `classification/classifier.py` – Unified filtering and classification:
+  - `filter_article(...)` – inclusion-based relevance filtering
+  - `classify_article_enhanced(...)` – full scoring breakdown and summary
+- `database/` – SQLite schema and operations
+- `fetch_and_classify_by_date.py` / `fetch_and_classify_weekly.py` – collection + classification entry points
+
+Classification uses Claude or Gemini automatically based on the available API key.

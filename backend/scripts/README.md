@@ -1,23 +1,71 @@
 # Utility Scripts
 
-This directory contains utility scripts for managing the medical articles database and processing.
+This directory contains utility scripts for working with the medical articles database and the AI classification pipeline.
+
+## Environment
+
+The classifiers support Anthropic Claude or Google Gemini. Provide one of the following in `.env` (either in `backend/.env` or project root `.env`):
+
+```
+ANTHROPIC_API_KEY=...
+# or
+GOOGLE_API_KEY=...
+```
 
 ## Scripts
 
-- **reclassify_relevant_articles.py** - Reclassifies and re-scores relevant articles with complete abstracts using Claude Sonnet 4.5. This script updates existing article classifications in the database.
+- `scripts/score_pmids.py` – Classify and print detailed scoring for specific PMIDs.
+- `scripts/export_relevant_articles_weekly.py` – Export relevant articles from the last 14 days to CSV.
+- `scripts/process_weekly_articles.py` – Orchestrate weekly collection and classification.
 
-## Usage
+Related processing entry points (under `medical_processing/`):
+
+- `medical_processing/fetch_and_classify_by_date.py` – Fetch and classify articles for a date range.
+- `medical_processing/fetch_and_classify_weekly.py` – Convenience wrapper for the last 7 days.
+
+## Usage Examples
 
 ```bash
-# Reclassify all relevant articles
+# From repository root
 cd backend
-python scripts/reclassify_relevant_articles.py
+
+# Score specific PMIDs (prints full ranking breakdown)
+python scripts/score_pmids.py 41183339 41183330
+
+# Export relevant articles from the last 2 weeks to CSV
+python scripts/export_relevant_articles_weekly.py
+
+# Weekly pipeline (last 7 days)
+python medical_processing/fetch_and_classify_weekly.py
 ```
 
-## Processing Scripts
+### Windows (PowerShell) examples
 
-The main article collection and classification scripts are located in `medical_processing/`:
+```powershell
+# From repository root
+cd backend
 
-- `medical_processing/fetch_and_classify_by_date.py` - Fetch and classify articles from a date range
-- `medical_processing/fetch_and_classify_weekly.py` - Convenience wrapper for weekly article fetching
+# Activate venv (created at repo root as .venv)
+.\..\.venv\Scripts\Activate.ps1
+
+# Recommended for proper unicode output
+$env:PYTHONIOENCODING = 'utf-8'; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Score specific PMIDs
+& "..\.venv\Scripts\python.exe" scripts\score_pmids.py 41183339 41183330
+
+# Export relevant articles from the last 2 weeks
+& "..\.venv\Scripts\python.exe" scripts\export_relevant_articles_weekly.py
+
+# Weekly pipeline (last 7 days)
+& "..\.venv\Scripts\python.exe" medical_processing\fetch_and_classify_weekly.py
+```
+
+## Classification Flow (Unified)
+
+The pipeline uses one unified flow:
+- `filter_article(...)` – Inclusion-based relevance filtering
+- `classify_article_enhanced(...)` – Full scoring and summary for relevant items
+
+Deprecated duplicates have been removed. Use the unified methods only.
 
