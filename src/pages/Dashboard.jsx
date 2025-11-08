@@ -95,6 +95,9 @@ export default function Dashboard() {
       console.log("Loaded studies:", studies.length);
       console.log("Loaded user statuses:", userStatuses.length);
       console.log("Loaded all statuses:", allStatuses.length);
+      console.log("Sample status record:", allStatuses[0]);
+      console.log("Statuses with article_id:", allStatuses.filter(s => s.article_id).length);
+      console.log("Statuses with study_id:", allStatuses.filter(s => s.study_id).length);
       // console.log("Loaded comments:", comments.length);
 
       let usersData = [];
@@ -144,6 +147,10 @@ export default function Dashboard() {
           }
           return acc;
         }, {});
+      
+      console.log("Library counts:", libraryCounts);
+      console.log("Article counts:", Object.keys(libraryCounts).filter(k => k.startsWith('article_')).length);
+      console.log("Study counts:", Object.keys(libraryCounts).filter(k => k.startsWith('study_')).length);
 
       // Fetch all studies for mapping
       let allStudiesForTrending = [];
@@ -213,6 +220,7 @@ export default function Dashboard() {
           readCount: item.libraryCount // Keep readCount for backward compatibility with TopStudies component
         }));
 
+      console.log("Top two trending items:", topTwo);
       setTopThreeStudies(topTwo);
 
       // Custom sort for dashboard: Key > Major > Recent

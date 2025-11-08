@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
+from sqlalchemy import text
 from datetime import timedelta
 import os
 from dotenv import load_dotenv
@@ -1277,15 +1278,16 @@ try:
             db.session.rollback()
         # Migrate UserStudyStatus to support article_id
         try:
-            # Check if article_id column exists
-            result = db.session.execute("PRAGMA table_info(user_study_status)")
+            # Check if article_id column exists using text() for PRAGMA
+            result = db.session.execute(text("PRAGMA table_info(user_study_status)"))
             columns = [row[1] for row in result]
             if 'article_id' not in columns:
-                # SQLite doesn't support ALTER TABLE to modify constraints, so we need to recreate
-                # For now, just add the column (SQLite allows adding nullable columns)
-                db.session.execute("ALTER TABLE user_study_status ADD COLUMN article_id INTEGER")
+                # SQLite allows adding nullable columns
+                db.session.execute(text("ALTER TABLE user_study_status ADD COLUMN article_id INTEGER"))
                 db.session.commit()
                 print("Added article_id column to user_study_status table")
+            else:
+                print("article_id column already exists in user_study_status table")
             # Make study_id nullable if it's not already (SQLite limitation - can't modify constraints easily)
             # This will be handled by create_all() on new tables
         except Exception as e:
