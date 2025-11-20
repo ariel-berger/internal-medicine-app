@@ -14,7 +14,6 @@ import StudyGrid from '../components/dashboard/StudyGrid';
 import MedicalArticleGrid from '../components/dashboard/MedicalArticleGrid';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 const SPECIALTIES = [
@@ -30,18 +29,14 @@ const normalizeSpecialty = (value) =>
 
 function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
   const [selectedSpecialties, setSelectedSpecialties] = useState(new Set(SPECIALTIES));
-  const [isMajor, setIsMajor] = useState(false);
-  const [isKey, setIsKey] = useState(false);
   const [monthYear, setMonthYear] = useState('all');
 
   useEffect(() => {
     onFilterChange({
       specialties: selectedSpecialties,
-      isMajor,
-      isKey,
       monthYear
     });
-  }, [selectedSpecialties, isMajor, isKey, monthYear, onFilterChange]);
+  }, [selectedSpecialties, monthYear, onFilterChange]);
 
   const handleSelectSpecialty = (specialty) => {
     if (specialty === '__ALL__') {
@@ -54,7 +49,7 @@ function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
 
   return (
     <Card className="professional-card p-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
         <div>
           <Label className="text-sm font-semibold text-slate-700">Specialty</Label>
           <Select onValueChange={handleSelectSpecialty}>
@@ -83,14 +78,6 @@ function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center space-x-2">
-          <Checkbox id="major-journal" checked={isMajor} onCheckedChange={setIsMajor} />
-          <Label htmlFor="major-journal">Major Journal</Label>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Checkbox id="key-study" checked={isKey} onCheckedChange={setIsKey} />
-          <Label htmlFor="key-study">Key Study</Label>
-        </div>
       </div>
     </Card>
   );
@@ -108,8 +95,6 @@ export default function AllStudies() {
   const [currentUser, setCurrentUser] = useState(null);
   const [filters, setFilters] = useState({
     specialties: new Set(SPECIALTIES),
-    isMajor: false,
-    isKey: false,
     monthYear: 'all'
   });
 
@@ -128,7 +113,15 @@ export default function AllStudies() {
         limit: 100, // Get more articles for the all studies page
         sort: 'ranking_score' 
       });
-      setMedicalArticles(medicalArticlesData);
+      // Filter out case reports from All Studies page
+      const isCaseReport = (article) => {
+        if (!article.article_type && !article.publication_type) return false;
+        const articleType = (article.article_type || article.publication_type || '').toLowerCase();
+        return articleType.includes('case report') || articleType.includes('case reports');
+      };
+      const filteredMedicalArticles = medicalArticlesData.filter(article => !isCaseReport(article));
+      console.log("Loaded medical articles (excluding case reports):", filteredMedicalArticles.length, "out of", medicalArticlesData.length);
+      setMedicalArticles(filteredMedicalArticles);
 
       // Load persisted article statuses from localStorage
       setArticleStatuses(getArticleStatusMap());
@@ -231,7 +224,7 @@ export default function AllStudies() {
 
   const filteredStudies = useMemo(() => {
     return allStudies.filter(study => {
-      const { specialties, isMajor, isKey, monthYear } = filters;
+      const { specialties, monthYear } = filters;
       
       const searchTermMatch = !searchTerm ||
         (study.title && study.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -240,8 +233,6 @@ export default function AllStudies() {
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
       const studySpecialties = Array.isArray(study.specialties) ? study.specialties : (study.specialty ? [study.specialty] : []);
       const specialtyMatch = studySpecialties.length === 0 || studySpecialties.some(s => normalizedSelected.has(normalizeSpecialty(s)));
-      const majorMatch = !isMajor || study.is_major_journal || study.impact_factor >= 25;
-      const keyMatch = !isKey || study.is_important_to_read;
       
       let dateMatch = true;
       if (monthYear !== 'all') {
@@ -253,13 +244,13 @@ export default function AllStudies() {
         }
       }
 
-      return searchTermMatch && specialtyMatch && majorMatch && keyMatch && dateMatch;
+      return searchTermMatch && specialtyMatch && dateMatch;
     });
   }, [allStudies, searchTerm, filters]);
 
   const filteredArticles = useMemo(() => {
     return medicalArticles.filter(article => {
-      const { specialties, isMajor, isKey, monthYear } = filters;
+      const { specialties, monthYear } = filters;
       
       const searchTermMatch = !searchTerm ||
         (article.title && article.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -268,8 +259,6 @@ export default function AllStudies() {
 
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
       const specialtyMatch = article.medical_category && normalizedSelected.has(normalizeSpecialty(article.medical_category));
-      const majorMatch = !isMajor || article.isMajorJournal();
-      const keyMatch = !isKey || article.is_key_study === true;
       
       let dateMatch = true;
       if (monthYear !== 'all') {
@@ -281,7 +270,7 @@ export default function AllStudies() {
         }
       }
 
-      return searchTermMatch && specialtyMatch && majorMatch && keyMatch && dateMatch;
+      return searchTermMatch && specialtyMatch && dateMatch;
     });
   }, [medicalArticles, searchTerm, filters]);
 

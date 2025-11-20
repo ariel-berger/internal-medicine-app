@@ -8,7 +8,10 @@ export default function MedicalArticleGrid({
   statusMap, 
   onStatusChange, 
   isAdmin = false,
-  onArticleUpdate
+  onArticleUpdate,
+  hideScore = false,
+  hideTags = false,
+  hidePublicationType = false
 }) {
   if (isLoading) {
     return (
@@ -68,6 +71,9 @@ export default function MedicalArticleGrid({
           onStatusChange={onStatusChange}
           isAdmin={isAdmin}
           onArticleUpdate={onArticleUpdate}
+          hideScore={hideScore}
+          hideTags={hideTags}
+          hidePublicationType={hidePublicationType}
         />
       ))}
     </div>

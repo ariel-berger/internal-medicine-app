@@ -60,7 +60,14 @@ export default function Dashboard() {
           sort: 'ranking_score',
           excludeHidden: true  // Exclude hidden articles from dashboard
         });
-        console.log("Loaded medical articles:", medicalArticlesData.length);
+        // Filter out case reports from dashboard
+        const isCaseReport = (article) => {
+          if (!article.article_type && !article.publication_type) return false;
+          const articleType = (article.article_type || article.publication_type || '').toLowerCase();
+          return articleType.includes('case report') || articleType.includes('case reports');
+        };
+        medicalArticlesData = medicalArticlesData.filter(article => !isCaseReport(article));
+        console.log("Loaded medical articles (excluding case reports):", medicalArticlesData.length);
         console.log("First article sample:", medicalArticlesData[0]);
         setMedicalArticles(medicalArticlesData);
       } catch (e) {

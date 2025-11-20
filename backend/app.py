@@ -296,7 +296,8 @@ def register():
 def google_login():
     """Login/Register using Google ID token."""
     if not GOOGLE_AUTH_AVAILABLE:
-        return jsonify({'error': 'Google auth not available on server'}), 503
+        print("Google auth not available - libraries not installed")
+        return jsonify({'error': 'Google auth not available on server. Please install google-auth library.'}), 503
 
     data = request.get_json() or {}
     token = data.get('idToken') or data.get('credential')
@@ -304,7 +305,8 @@ def google_login():
     if not token:
         return jsonify({'error': 'Missing idToken'}), 400
     if not client_id:
-        return jsonify({'error': 'Server missing GOOGLE_CLIENT_ID'}), 500
+        print("GOOGLE_CLIENT_ID environment variable is not set")
+        return jsonify({'error': 'Server missing GOOGLE_CLIENT_ID environment variable'}), 500
 
     try:
         idinfo = google_id_token.verify_oauth2_token(
@@ -341,7 +343,10 @@ def google_login():
             'user': user.to_dict(),
         })
     except Exception as e:
-        return jsonify({'error': f'Google verification failed: {str(e)}'}), 401
+        print(f"/api/auth/google failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Google verification failed: {str(e)}'}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -372,7 +377,9 @@ def login():
         })
     except Exception as e:
         print(f"/api/auth/login failed: {e}")
-        return jsonify({'error': 'Login failed'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Login failed: {str(e)}'}), 500
 
 @app.route('/api/auth/me', methods=['GET'])
 @jwt_required()
@@ -824,7 +831,7 @@ def get_relevant_articles():
         # Get relevant articles with enhanced classification data
         query = f"""
             SELECT a.id, a.pmid, a.title, a.abstract, a.journal, a.authors, 
-                   a.publication_date, a.doi, a.url, a.medical_category, a.article_type,
+                   a.publication_date, a.doi, a.url, a.medical_category, a.article_type, a.publication_type,
                    ec.ranking_score, ec.clinical_bottom_line, ec.tags, ec.participants,
                    ec.focus_points, ec.type_points, ec.prevalence_points, 
                    ec.hospitalization_points, ec.impact_factor_points,
@@ -873,17 +880,18 @@ def get_relevant_articles():
                 'url': article[8],
                 'medical_category': article[9],
                 'article_type': article[10],
-                'ranking_score': article[11],
-                'clinical_bottom_line': article[12],
-                'tags': article[13],
-                'participants': article[14],
-                'focus_points': article[15],
-                'type_points': article[16],
-                'prevalence_points': article[17],
-                'hospitalization_points': article[18],
-                'impact_factor_points': article[19],
+                'publication_type': article[11],
+                'ranking_score': article[12],
+                'clinical_bottom_line': article[13],
+                'tags': article[14],
+                'participants': article[15],
+                'focus_points': article[16],
+                'type_points': article[17],
+                'prevalence_points': article[18],
+                'hospitalization_points': article[19],
+                'impact_factor_points': article[20],
                 'is_key_study': article[0] in key_ids,
-                'hidden_from_dashboard': bool(article[20]) if len(article) > 20 else False
+                'hidden_from_dashboard': bool(article[21]) if len(article) > 21 else False
             })
         
         return jsonify({

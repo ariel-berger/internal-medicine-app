@@ -6,6 +6,7 @@ import AdminDashboard from "./AdminDashboard";
 import MyLibrary from "./MyLibrary";
 import DataManagement from "./DataManagement";
 import AllStudies from "./AllStudies";
+import CaseReports from "./CaseReports";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -22,6 +23,8 @@ const PAGES = {
     DataManagement: DataManagement,
     
     AllStudies: AllStudies,
+    
+    CaseReports: CaseReports,
     
 }
 
@@ -57,6 +60,7 @@ function PagesContent() {
                             <Route path="/MyLibrary" element={<MyLibrary />} />
                             <Route path="/DataManagement" element={<DataManagement />} />
                             <Route path="/AllStudies" element={<AllStudies />} />
+                            <Route path="/CaseReports" element={<CaseReports />} />
                         </Routes>
                     </Layout>
                 </ProtectedRoute>

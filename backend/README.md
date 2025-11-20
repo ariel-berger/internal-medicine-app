@@ -27,34 +27,6 @@ python run.py
 
 The server will start on `http://localhost:5000`
 
-## Windows (PowerShell) notes
-
-PowerShell differs slightly from bash:
-
-```powershell
-# From repo root
-cd backend
-
-# Create and activate venv
-py -3.12 -m venv ..\.venv
-.\..\.venv\Scripts\Activate.ps1
-
-# Install deps
-pip install -r ..\requirements.txt
-
-# Optional: ensure UTF-8 output in the console
-$env:PYTHONIOENCODING = 'utf-8'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-# Run utilities
-& "..\.venv\Scripts\python.exe" scripts\score_pmids.py 41183339
-& "..\.venv\Scripts\python.exe" scripts\export_relevant_articles_weekly.py
-& "..\.venv\Scripts\python.exe" medical_processing\fetch_and_classify_weekly.py
-```
-
-Tips:
-- Use `;` (not `&&`) to chain commands.
-- `.env` can be placed in `backend\` or the project root.
 
 ## API Endpoints
 

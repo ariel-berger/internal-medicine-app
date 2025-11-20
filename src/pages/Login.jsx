@@ -21,32 +21,72 @@ export default function Login() {
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!window.google || !clientId || !googleButtonRef.current) return;
-    try {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response) => {
-          setIsLoading(true);
-          setError('');
-          try {
-            await localClient.googleLogin(response.credential);
-            navigate('/dashboard');
-          } catch (e) {
-            setError(e.message || 'Google sign-in failed');
-          } finally {
-            setIsLoading(false);
-          }
-        },
-      });
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: 'outline',
-        size: 'large',
-        width: 360,
-      });
-    } catch (e) {
-      // ignore init errors
+    if (!clientId || !googleButtonRef.current) {
+      console.log('Google Sign-In: Missing client ID or button ref');
+      return;
     }
-  }, []);
+
+    // Function to initialize Google Sign-In
+    const initializeGoogleSignIn = () => {
+      if (!window.google || !window.google.accounts) {
+        console.log('Google Sign-In: Script not loaded yet, retrying...');
+        return false;
+      }
+
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: async (response) => {
+            setIsLoading(true);
+            setError('');
+            try {
+              await localClient.googleLogin(response.credential);
+              navigate('/dashboard');
+            } catch (e) {
+              setError(e.message || 'Google sign-in failed');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        });
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          width: 360,
+        });
+        console.log('Google Sign-In: Button rendered successfully');
+        return true;
+      } catch (e) {
+        console.error('Google Sign-In initialization error:', e);
+        return false;
+      }
+    };
+
+    // Try to initialize immediately
+    if (initializeGoogleSignIn()) {
+      return;
+    }
+
+    // If Google script hasn't loaded yet, wait for it
+    const checkInterval = setInterval(() => {
+      if (initializeGoogleSignIn()) {
+        clearInterval(checkInterval);
+      }
+    }, 100);
+
+    // Cleanup: stop checking after 10 seconds
+    const timeout = setTimeout(() => {
+      clearInterval(checkInterval);
+      if (!window.google) {
+        console.warn('Google Sign-In: Script failed to load after 10 seconds');
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(checkInterval);
+      clearTimeout(timeout);
+    };
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

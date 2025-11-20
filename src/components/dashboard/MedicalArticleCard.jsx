@@ -89,7 +89,7 @@ function ReadingStatusManager({ article, statusRecord, onStatusChange }) {
   );
 }
 
-export default function MedicalArticleCard({ article, statusRecord, onStatusChange, isAdmin = false, onArticleUpdate }) {
+export default function MedicalArticleCard({ article, statusRecord, onStatusChange, isAdmin = false, onArticleUpdate, hideScore = false, hideTags = false, hidePublicationType = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
@@ -156,7 +156,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 {/* Ranking Score Badge */}
-                {article.ranking_score && (
+                {!hideScore && article.ranking_score && (
                   <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-semibold">
                     <Star className="w-3 h-3 mr-1.5 fill-amber-400 text-amber-600" />
                     Score: {article.ranking_score}
@@ -188,8 +188,8 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                   </Badge>
                 )}
                 
-                {/* Publication Type Badge (hide if default 'Journal Article' or missing) */}
-                {publicationType && publicationType !== 'Journal Article' && (
+                {/* Publication Type Badge (hide if default 'Journal Article' or missing, or if hidePublicationType is true) */}
+                {!hidePublicationType && publicationType && publicationType !== 'Journal Article' && (
                   <Badge 
                     variant="outline"
                     className={studyTypeColors[publicationType] || "bg-slate-100 text-slate-700"}
