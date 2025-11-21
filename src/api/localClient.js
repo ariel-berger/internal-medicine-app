@@ -143,6 +143,16 @@ class LocalAPIClient {
   async setMedicalArticleHiddenFromDashboard(articleId, isHidden) {
     return this.put(`/medical-articles/${articleId}/hide-dashboard`, { hidden_from_dashboard: !!isHidden });
   }
+
+  // Admin methods
+  async fetchArticlesByDate(startDate, endDate, options = {}) {
+    return this.post('/admin/articles/fetch-by-date', {
+      start_date: startDate,
+      end_date: endDate,
+      email: options.email,
+      model: options.model || 'claude'
+    });
+  }
 }
 
 // Create singleton instance

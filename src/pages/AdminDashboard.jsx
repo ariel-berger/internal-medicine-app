@@ -3,11 +3,16 @@ import React, { useState, useEffect } from "react";
 import { Study } from "@/api/entities";
 import { User } from "@/api/entities";
 import { InvokeLLM } from "@/api/integrations";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { localClient } from "@/api/localClient";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   BarChart3, Users, MessageSquare, TrendingUp, BookOpen,
-  Crown, Calendar, Award, Hand, Shield
+  Crown, Calendar, Award, Hand, Shield, Download, Loader, CheckCircle, AlertCircle
 } from "lucide-react";
 import { format, subDays, isAfter, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -19,6 +24,10 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [analytics, setAnalytics] = useState({});
   const [highYieldCount, setHighYieldCount] = useState(null);
+  const [fetchStartDate, setFetchStartDate] = useState('');
+  const [fetchEndDate, setFetchEndDate] = useState('');
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -114,6 +123,85 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('High-yield calculation failed:', error);
       setHighYieldCount(0);
+    }
+  };
+
+  const handleFetchArticles = async () => {
+    if (!fetchStartDate || !fetchEndDate) {
+      setFetchStatus({
+        type: 'error',
+        message: 'Please provide both start and end dates'
+      });
+      return;
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}\/\d{2}\/\d{2}$/;
+    if (!dateRegex.test(fetchStartDate) || !dateRegex.test(fetchEndDate)) {
+      setFetchStatus({
+        type: 'error',
+        message: 'Invalid date format. Please use YYYY/MM/DD format (e.g., 2025/01/01)'
+      });
+      return;
+    }
+
+    // Validate date range
+    try {
+      const start = new Date(fetchStartDate.replace(/\//g, '-'));
+      const end = new Date(fetchEndDate.replace(/\//g, '-'));
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new Error('Invalid date');
+      }
+      
+      if (start > end) {
+        setFetchStatus({
+          type: 'error',
+          message: 'Start date must be before or equal to end date'
+        });
+        return;
+      }
+
+      const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+      if (daysDiff > 365) {
+        setFetchStatus({
+          type: 'error',
+          message: 'Date range cannot exceed 365 days'
+        });
+        return;
+      }
+    } catch (error) {
+      setFetchStatus({
+        type: 'error',
+        message: 'Invalid date format. Please use YYYY/MM/DD format'
+      });
+      return;
+    }
+
+    setIsFetching(true);
+    setFetchStatus(null);
+
+    try {
+      const response = await localClient.fetchArticlesByDate(fetchStartDate, fetchEndDate);
+      
+      setFetchStatus({
+        type: 'success',
+        message: response.message || `Article processing started for date range ${fetchStartDate} to ${fetchEndDate}. This may take several minutes.`
+      });
+
+      // Clear the form after successful submission
+      setTimeout(() => {
+        setFetchStartDate('');
+        setFetchEndDate('');
+        setFetchStatus(null);
+      }, 5000);
+    } catch (error) {
+      setFetchStatus({
+        type: 'error',
+        message: error.message || 'Failed to start article processing. Please try again.'
+      });
+    } finally {
+      setIsFetching(false);
     }
   };
 
@@ -392,7 +480,7 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Additional Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card className="medical-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -466,6 +554,78 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Article Fetching Section */}
+        <Card className="medical-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5 text-blue-600" />
+              Fetch & Classify Articles from PubMed
+            </CardTitle>
+            <CardDescription>
+              Fetch and classify the latest articles from PubMed using a custom date range. Processing runs in the background and may take several minutes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="start-date">Start Date (YYYY/MM/DD)</Label>
+                <Input
+                  id="start-date"
+                  type="text"
+                  placeholder="2025/01/01"
+                  value={fetchStartDate}
+                  onChange={(e) => setFetchStartDate(e.target.value)}
+                  disabled={isFetching}
+                  pattern="\d{4}/\d{2}/\d{2}"
+                />
+                <p className="text-xs text-slate-500">Format: YYYY/MM/DD (e.g., 2025/01/01)</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="end-date">End Date (YYYY/MM/DD)</Label>
+                <Input
+                  id="end-date"
+                  type="text"
+                  placeholder="2025/01/07"
+                  value={fetchEndDate}
+                  onChange={(e) => setFetchEndDate(e.target.value)}
+                  disabled={isFetching}
+                  pattern="\d{4}/\d{2}/\d{2}"
+                />
+                <p className="text-xs text-slate-500">Format: YYYY/MM/DD (e.g., 2025/01/07)</p>
+              </div>
+            </div>
+
+            {fetchStatus && (
+              <Alert variant={fetchStatus.type === 'error' ? 'destructive' : 'default'}>
+                {fetchStatus.type === 'error' ? (
+                  <AlertCircle className="h-4 w-4" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                <AlertDescription>{fetchStatus.message}</AlertDescription>
+              </Alert>
+            )}
+
+            <Button
+              onClick={handleFetchArticles}
+              disabled={isFetching || !fetchStartDate || !fetchEndDate}
+              className="w-full md:w-auto"
+            >
+              {isFetching ? (
+                <>
+                  <Loader className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Fetch & Classify Articles
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

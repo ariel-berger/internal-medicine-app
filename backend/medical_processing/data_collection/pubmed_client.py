@@ -51,7 +51,7 @@ class PubMedClient:
         logger.info(f"Searching PubMed with query: {search_query}")
         
         try:
-            response = requests.get(PUBMED_SEARCH_URL, params=params)
+            response = requests.get(PUBMED_SEARCH_URL, params=params, timeout=30)  # 30 second timeout
             response.raise_for_status()
             
             # Parse XML response
@@ -90,7 +90,7 @@ class PubMedClient:
         logger.info(f"Searching PubMed with custom date query: {search_query}")
         
         try:
-            response = requests.get(PUBMED_SEARCH_URL, params=params)
+            response = requests.get(PUBMED_SEARCH_URL, params=params, timeout=30)  # 30 second timeout
             response.raise_for_status()
             
             # Parse XML response
@@ -135,7 +135,7 @@ class PubMedClient:
         }
         
         try:
-            response = requests.get(PUBMED_FETCH_URL, params=params)
+            response = requests.get(PUBMED_FETCH_URL, params=params, timeout=30)  # 30 second timeout
             response.raise_for_status()
             
             return self._parse_articles_xml(response.content)

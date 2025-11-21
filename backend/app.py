@@ -11,6 +11,16 @@ from typing import Optional
 from werkzeug.security import generate_password_hash, check_password_hash
 import threading
 import logging
+import sys
+
+# Configure logging to show all logs in terminal
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # Output to terminal
+    ]
+)
 
 # Load environment variables
 # 1) Load root .env if present
@@ -1287,6 +1297,95 @@ def fetch_weekly_articles():
         'message': 'Weekly article processing started in background',
         'status': 'processing',
         'note': 'Processing articles from the last 7 days. This may take several minutes.'
+    }), 202
+
+@app.route('/api/admin/articles/fetch-by-date', methods=['POST'])
+@jwt_required()
+def fetch_articles_by_date():
+    """
+    Fetch and classify articles from a specified date range.
+    Admin-only endpoint that accepts start_date and end_date in YYYY/MM/DD format.
+    """
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    if not medical_articles_service:
+        return jsonify({'error': 'Medical articles processing service not available'}), 503
+    
+    # Get date range and optional parameters
+    data = request.get_json() or {}
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    
+    if not start_date or not end_date:
+        return jsonify({'error': 'start_date and end_date are required (format: YYYY/MM/DD)'}), 400
+    
+    # Validate date format
+    try:
+        from datetime import datetime
+        datetime.strptime(start_date, '%Y/%m/%d')
+        datetime.strptime(end_date, '%Y/%m/%d')
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Please use YYYY/MM/DD format (e.g., 2025/01/01)'}), 400
+    
+    # Validate date range
+    start_dt = datetime.strptime(start_date, '%Y/%m/%d')
+    end_dt = datetime.strptime(end_date, '%Y/%m/%d')
+    
+    if start_dt > end_dt:
+        return jsonify({'error': 'Start date must be before or equal to end date'}), 400
+    
+    if (end_dt - start_dt).days > 365:
+        return jsonify({'error': 'Date range cannot exceed 365 days'}), 400
+    
+    email = data.get('email') or os.getenv('PUBMED_EMAIL')
+    model_provider = data.get('model', 'claude')
+    
+    # Run processing in background thread to avoid timeouts
+    def process_articles():
+        try:
+            logger = logging.getLogger(__name__)
+            # Print to stdout for immediate visibility in terminal
+            print(f"\n{'='*60}")
+            print(f"🚀 Starting article processing for date range {start_date} to {end_date}")
+            print(f"{'='*60}\n")
+            logger.info(f"Starting article processing for date range {start_date} to {end_date} (background thread)")
+            
+            result = medical_articles_service.process_articles_by_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                email=email,
+                model_provider=model_provider
+            )
+            
+            if result.get('success'):
+                print(f"\n✅ Processing completed!")
+                print(f"   - Articles collected: {result.get('articles_collected', 0)}")
+                print(f"   - Articles classified: {result.get('articles_classified', 0)}")
+                print(f"   - Articles stored: {result.get('articles_stored', 0)}")
+                print(f"{'='*60}\n")
+                logger.info(f"Date range processing completed: {result.get('articles_stored', 0)} articles stored")
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                print(f"\n❌ Processing failed: {error_msg}\n")
+                logger.error(f"Date range processing failed: {error_msg}")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            print(f"\n❌ Error in background date range processing: {e}\n")
+            logger.error(f"Error in background date range processing: {e}", exc_info=True)
+    
+    # Start background thread
+    thread = threading.Thread(target=process_articles, daemon=True)
+    thread.start()
+    
+    return jsonify({
+        'message': f'Article processing started in background for date range {start_date} to {end_date}',
+        'status': 'processing',
+        'start_date': start_date,
+        'end_date': end_date,
+        'note': 'Processing articles from the specified date range. This may take several minutes.'
     }), 202
 
 # Ensure database tables exist at import time for production servers (gunicorn)

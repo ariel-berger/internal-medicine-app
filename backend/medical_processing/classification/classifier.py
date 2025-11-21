@@ -696,9 +696,10 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
             if self.model_provider == "claude":
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=2000,
+                    max_tokens=2500,
                     temperature=0.01,  # Low temperature for consistent classification
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[{"role": "user", "content": prompt}],
+                    timeout=60.0  # 60 second timeout to prevent hanging
                 )
                 return response.content[0].text
             elif self.model_provider == "gemini":

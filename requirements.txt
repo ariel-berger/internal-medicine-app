@@ -27,3 +27,7 @@ gunicorn==21.2.0
 # Google Sign-In verification
 google-auth==2.35.0
 requests>=2.31.0
+
+# AI/ML for article classification
+anthropic>=0.40.0
+google-generativeai>=0.8.0
