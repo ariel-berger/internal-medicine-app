@@ -153,6 +153,10 @@ class LocalAPIClient {
       model: options.model || 'claude'
     });
   }
+
+  async addSingleArticle(url) {
+    return this.post('/admin/articles/add-single', { url });
+  }
 }
 
 // Create singleton instance

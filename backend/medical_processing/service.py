@@ -270,6 +270,58 @@ class MedicalArticlesService:
                 'error': str(e)
             }
     
+    def process_single_article(self, pmid_or_url: str, email: str = None, model_provider: str = "claude") -> Dict:
+        """Process a single article by PMID or URL."""
+        try:
+            # Extract PMID
+            pmid = pmid_or_url.strip()
+            if "pubmed.ncbi.nlm.nih.gov" in pmid:
+                 # Simple extraction: split by / and find the number
+                 # e.g. https://pubmed.ncbi.nlm.nih.gov/12345678/ or https://pubmed.ncbi.nlm.nih.gov/12345678
+                 parts = pmid.split('/')
+                 for part in parts:
+                     if part.isdigit():
+                         pmid = part
+                         break
+            
+            if not pmid.isdigit():
+                 return {'success': False, 'error': 'Invalid PubMed ID or URL'}
+
+            # Fetch details
+            client = PubMedClient(email=email)
+            articles = client.fetch_article_details([pmid])
+            
+            if not articles:
+                return {'success': False, 'error': 'Article not found on PubMed'}
+            
+            article = articles[0]
+            
+            # Classify (force relevant)
+            # Initialize classifier if needed
+            from .classification.classifier import MedicalArticleClassifier
+            if not self.classifier or self.classifier.model_provider != model_provider:
+                self.classifier = MedicalArticleClassifier(model_provider=model_provider)
+            
+            # Use force_relevant=True to skip filtering
+            result = self.classifier.classify_article_enhanced(article, force_relevant=True)
+            
+            article.update(result)
+            
+            # Store
+            storage_result = self.store_articles([article])
+            
+            if not storage_result['success']:
+                return storage_result
+            
+            return {
+                'success': True,
+                'article': article
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing single article: {e}")
+            return {'success': False, 'error': str(e)}
+
     def _calculate_article_statistics(self, classified_articles: List[Dict]) -> Dict:
         """Calculate statistics from classified articles."""
         if not classified_articles:

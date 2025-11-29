@@ -1427,6 +1427,66 @@ def fetch_articles_by_date():
         'note': 'Processing articles from the specified date range. This may take several minutes.'
     }), 202
 
+@app.route('/api/admin/articles/add-single', methods=['POST'])
+@jwt_required()
+def add_single_article():
+    """Add a single article by PubMed URL or ID, force relevant, classify, save, and mark as key study."""
+    current_user_id = int(get_jwt_identity())
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    url_or_id = data.get('url')
+    
+    if not url_or_id:
+        return jsonify({'error': 'URL or PMID is required'}), 400
+        
+    if not medical_articles_service:
+        return jsonify({'error': 'Service not available'}), 503
+        
+    # Process article
+    result = medical_articles_service.process_single_article(url_or_id)
+    
+    if not result.get('success'):
+        return jsonify({'error': result.get('error', 'Unknown error')}), 400
+        
+    article = result['article']
+    article_id = None
+    
+    # Get the ID of the inserted article from medical db
+    try:
+        conn = get_medical_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM articles WHERE pmid = ?", (article['pmid'],))
+        row = cursor.fetchone()
+        if row:
+            article_id = row[0]
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'Database error: {e}'}), 500
+        
+    if not article_id:
+         return jsonify({'error': 'Failed to retrieve saved article ID'}), 500
+         
+    # Mark as key study
+    try:
+        # Check if already key study
+        key_record = KeyArticle.query.filter_by(article_id=article_id).first()
+        if not key_record:
+            key_record = KeyArticle(article_id=article_id, created_by=current_user_id)
+            db.session.add(key_record)
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        # Don't fail the whole request if key study marking fails, but log it
+        print(f"Failed to mark as key study: {e}")
+        
+    return jsonify({
+        'message': 'Article added successfully',
+        'article': article
+    })
+
 # Ensure database tables exist at import time for production servers (gunicorn)
 try:
     with app.app_context():

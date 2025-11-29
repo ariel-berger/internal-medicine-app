@@ -54,6 +54,16 @@ export class MedicalArticle {
     }
   }
 
+  static async addSingle(url) {
+    try {
+        const response = await localClient.addSingleArticle(url);
+        return new MedicalArticle(response.article);
+    } catch (error) {
+        console.error('Error adding single article:', error);
+        throw error;
+    }
+  }
+
   static async search(query, params = {}) {
     try {
       const response = await localClient.searchMedicalArticles(query, params);

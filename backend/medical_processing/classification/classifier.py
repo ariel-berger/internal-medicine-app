@@ -618,10 +618,16 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
                 logger.warning("Using fallback classification response due to content filtering")
             return self._get_default_enhanced_response()
 
-    def classify_article_enhanced(self, article_data: Dict) -> Dict:
+    def classify_article_enhanced(self, article_data: Dict, force_relevant: bool = False) -> Dict:
         """Classify a single article using the specified model provider with two-step approach."""
-        # Step 1: Filter for relevance
-        filtering_result = self.filter_article(article_data)
+        # Step 1: Filter for relevance (unless forced)
+        if force_relevant:
+            filtering_result = {
+                'is_relevant': True,
+                'reason': 'Forced relevance by user'
+            }
+        else:
+            filtering_result = self.filter_article(article_data)
         
         # If not relevant, return with filtering results and default values
         if not filtering_result.get('is_relevant', False):
