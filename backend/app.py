@@ -253,6 +253,18 @@ class ArticleComment(db.Model):
             'created_date': self.created_date.isoformat() if self.created_date else None
         }
 
+class UserLoginHistory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    login_timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class ArticleInteraction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    article_id = db.Column(db.Integer, nullable=False)
+    interaction_type = db.Column(db.String(50), nullable=False) # 'pubmed_click', 'doi_click'
+    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+
 # Routes
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -288,6 +300,14 @@ def register():
         )
         db.session.add(user)
         db.session.commit()
+        
+        # Record login
+        try:
+            login_record = UserLoginHistory(user_id=user.id)
+            db.session.add(login_record)
+            db.session.commit()
+        except Exception as e:
+            print(f"Failed to record login history: {e}")
         
         access_token = create_access_token(identity=str(user.id))
         return jsonify({
@@ -350,6 +370,15 @@ def google_login():
                 db.session.commit()
 
         access_token = create_access_token(identity=str(user.id))
+        
+        # Record login
+        try:
+            login_record = UserLoginHistory(user_id=user.id)
+            db.session.add(login_record)
+            db.session.commit()
+        except Exception as e:
+            print(f"Failed to record login history: {e}")
+
         return jsonify({
             'message': 'Login successful',
             'token': access_token,
@@ -379,6 +408,15 @@ def login():
             db.session.commit()
         
         access_token = create_access_token(identity=str(user.id))
+
+        # Record login
+        try:
+            login_record = UserLoginHistory(user_id=user.id)
+            db.session.add(login_record)
+            db.session.commit()
+        except Exception as e:
+            print(f"Failed to record login history: {e}")
+
         return jsonify({
             'message': 'Login successful',
             'token': access_token,
@@ -1486,6 +1524,88 @@ def add_single_article():
         'message': 'Article added successfully',
         'article': article
     })
+
+@app.route('/api/medical-articles/<int:article_id>/track-click', methods=['POST'])
+@jwt_required()
+def track_article_click(article_id):
+    try:
+        user_id = int(get_jwt_identity())
+        data = request.get_json() or {}
+        interaction_type = data.get('type', 'unknown_click')
+        
+        interaction = ArticleInteraction(
+            user_id=user_id,
+            article_id=article_id,
+            interaction_type=interaction_type
+        )
+        db.session.add(interaction)
+        db.session.commit()
+        return jsonify({'status': 'recorded'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/system-stats', methods=['GET'])
+@jwt_required()
+def get_admin_system_stats():
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+        
+    try:
+        from datetime import datetime
+        # Calculate date for last 7 days
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        
+        # 1. Users defined by login (distinct users)
+        # Total
+        total_distinct_users = db.session.query(db.func.count(db.distinct(UserLoginHistory.user_id))).scalar()
+        # Last 7 days
+        recent_distinct_users = db.session.query(db.func.count(db.distinct(UserLoginHistory.user_id)))\
+            .filter(UserLoginHistory.login_timestamp >= seven_days_ago).scalar()
+            
+        # 2. Logins (not distinct)
+        total_logins = UserLoginHistory.query.count()
+        recent_logins = UserLoginHistory.query.filter(UserLoginHistory.login_timestamp >= seven_days_ago).count()
+        
+        # 3. Articles added (from medical_articles.db)
+        conn = get_medical_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM articles")
+        total_articles = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE created_at >= date('now', '-7 days')")
+        recent_articles = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        # 4. Articles marked as read (UserStudyStatus)
+        total_read = UserStudyStatus.query.filter_by(status='read').count()
+        recent_read = UserStudyStatus.query.filter_by(status='read').filter(UserStudyStatus.created_date >= seven_days_ago).count()
+        
+        # 5. Article clicks
+        total_clicks = ArticleInteraction.query.count()
+        recent_clicks = ArticleInteraction.query.filter(ArticleInteraction.timestamp >= seven_days_ago).count()
+        
+        return jsonify({
+            'total': {
+                'distinct_users': total_distinct_users or 0,
+                'logins': total_logins or 0,
+                'articles_added': total_articles or 0,
+                'articles_read': total_read or 0,
+                'article_clicks': total_clicks or 0
+            },
+            'last_7_days': {
+                'distinct_users': recent_distinct_users or 0,
+                'logins': recent_logins or 0,
+                'articles_added': recent_articles or 0,
+                'articles_read': recent_read or 0,
+                'article_clicks': recent_clicks or 0
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Ensure database tables exist at import time for production servers (gunicorn)
 try:

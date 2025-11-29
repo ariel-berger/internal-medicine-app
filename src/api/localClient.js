@@ -144,7 +144,15 @@ class LocalAPIClient {
     return this.put(`/medical-articles/${articleId}/hide-dashboard`, { hidden_from_dashboard: !!isHidden });
   }
 
+  async trackArticleClick(articleId, type) {
+    return this.post(`/medical-articles/${articleId}/track-click`, { type });
+  }
+
   // Admin methods
+  async getAdminSystemStats() {
+    return this.get('/admin/system-stats');
+  }
+
   async fetchArticlesByDate(startDate, endDate, options = {}) {
     return this.post('/admin/articles/fetch-by-date', {
       start_date: startDate,

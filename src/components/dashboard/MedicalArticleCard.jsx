@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { MedicalArticle as MedicalArticleAPI } from '@/api/medicalArticles';
+import { localClient } from '@/api/localClient';
 import { User as UserEntity } from '@/api/entities';
 // Discussion feature removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -94,6 +95,12 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
   const [isUpdatingHidden, setIsUpdatingHidden] = useState(false);
+
+  const handleTrackClick = (type) => {
+    if (article.id) {
+      localClient.trackArticleClick(article.id, type).catch(e => console.error("Tracking failed", e));
+    }
+  };
 
   const parseTags = (tags) => {
     if (!tags) return [];
@@ -209,7 +216,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); handleTrackClick('pubmed'); }}
                     className="text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
                   >
                     <ExternalLink className="w-3 h-3" />
@@ -220,7 +227,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                     href={`https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(article.title)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); handleTrackClick('pubmed'); }}
                     className="text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
                   >
                     <ExternalLink className="w-3 h-3" />
@@ -233,7 +240,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                     href={`https://doi.org/${article.doi}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); handleTrackClick('doi'); }}
                     className="text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
                   >
                     <ExternalLink className="w-3 h-3" />
