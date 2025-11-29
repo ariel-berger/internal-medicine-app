@@ -4,7 +4,7 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText } from "lucide-react";
-import { GenerateImage } from "@/api/integrations";
+import logoImage from "@/assets/logo.png";
 import {
   Sidebar,
   SidebarContent,
@@ -28,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { User } from "@/api/entities";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 
 const SUPER_ADMIN_EMAIL = "medicortex-owner@berri.ai";
@@ -79,7 +78,6 @@ const adminNavItems = [
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
   const [currentUser, setCurrentUser] = React.useState(null);
-  const [logoUrl, setLogoUrl] = React.useState(null);
 
   React.useEffect(() => {
     const loadUser = async () => {
@@ -93,20 +91,6 @@ export default function Layout({ children, currentPageName }) {
       }
     };
     loadUser();
-  }, []);
-
-  React.useEffect(() => {
-    const generateLogo = async () => {
-      try {
-        const result = await GenerateImage({
-          prompt: "Create a simple, modern logo. The logo should feature the text 'Internal Nerds' in a cool, stylish, and professional sans-serif font. The text should be white and centered inside a solid-colored square with rounded corners. The square's color should be a professional deep teal blue. Flat design, vector style, no gradients or extra effects."
-        });
-        setLogoUrl(result.url);
-      } catch (error) {
-        console.error("Failed to generate logo:", error);
-      }
-    };
-    generateLogo();
   }, []);
 
   const handleLogout = async () => {
@@ -153,11 +137,7 @@ export default function Layout({ children, currentPageName }) {
       <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
         <Sidebar className="border-r border-slate-200 bg-white w-60">
           <SidebarHeader className="border-b border-slate-200 p-4 flex items-center gap-3">
-             {logoUrl ? (
-                <img src={logoUrl} alt="Internal Nerds Logo" className="w-10 h-10 rounded-lg" />
-              ) : (
-                <Skeleton className="w-10 h-10 rounded-lg" />
-              )}
+             <img src={logoImage} alt="Internal Nerds Logo" className="w-10 h-10 rounded-lg object-contain" />
               <div>
                  <h1 className="text-lg font-bold text-slate-800">Internal Nerds</h1>
               </div>
