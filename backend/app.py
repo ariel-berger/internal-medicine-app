@@ -39,8 +39,10 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 # Use persistent disk path if available (Render paid tier)
 persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
 if persistent_data_path:
-    # Use persistent disk for database
-    db_path = os.path.join(persistent_data_path, 'app.db')
+    # Use persistent disk for database - ensure absolute path
+    db_path = os.path.abspath(os.path.join(persistent_data_path, 'app.db'))
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
 else:
     # Default to relative path (ephemeral on free tier)
@@ -128,14 +130,15 @@ def get_medical_connection():
     # Use persistent disk path if available (Render paid tier)
     persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
     if persistent_data_path:
-        db_path = os.path.join(persistent_data_path, 'medical_articles.db')
+        # Ensure absolute path and directory exists
+        db_path = os.path.abspath(os.path.join(persistent_data_path, 'medical_articles.db'))
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
     else:
         # Default to relative path (ephemeral on free tier)
         db_path = os.path.join(os.path.dirname(__file__), 'medical_articles.db')
     
-    if os.path.exists(db_path):
-        return sqlite3.connect(db_path)
-    return None
+    # Always return a connection (will create DB if it doesn't exist)
+    return sqlite3.connect(db_path)
 
 # Models
 class User(db.Model):

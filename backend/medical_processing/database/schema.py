@@ -7,8 +7,11 @@ def get_database_path():
     """Get the database path, using persistent disk if available (Render paid tier)."""
     persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
     if persistent_data_path:
-        # Use persistent disk for database
-        return os.path.join(persistent_data_path, 'medical_articles.db')
+        # Use persistent disk for database - ensure absolute path
+        db_path = os.path.abspath(os.path.join(persistent_data_path, 'medical_articles.db'))
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        return db_path
     elif os.path.isabs(DATABASE_PATH):
         # Use absolute path if provided
         return DATABASE_PATH

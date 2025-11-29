@@ -141,9 +141,9 @@ The medical articles library path in `requirements.txt` is commented out. If you
      b. **Use Render Disk** (paid feature) to persist SQLite file - see below
      c. **Use external storage** (S3, etc.) for the SQLite file
 
-**Option B: Use Render Persistent Disk (Paid Tier) - Keep SQLite**
+**Option B: Use Render Persistent Disk (Paid Tier) - Keep SQLite** ✅ RECOMMENDED
 
-If you upgrade to Render's paid tier, you can use persistent disks to keep SQLite databases:
+If you upgrade to Render's paid tier, you can use persistent disks to keep SQLite databases. **The code is now configured to automatically use persistent storage when available.**
 
 1. **Upgrade to Paid Tier:**
    - Render Starter plan ($7/month) or higher
@@ -156,26 +156,34 @@ If you upgrade to Render's paid tier, you can use persistent disks to keep SQLit
    - **Size**: Start with 10GB (can increase later, not decrease)
    - Save
 
-3. **Configure Database Paths:**
-   - Set environment variable in your service:
+3. **Configure Environment Variable:**
+   - In your Render service settings → Environment tab
+   - Add environment variable:
      ```
      PERSISTENT_DATA_PATH=/data
      ```
-   - Update `DATABASE_URL` to use persistent path:
-     ```
-     DATABASE_URL=sqlite:////data/app.db
-     ```
-   - The code will automatically use this path (see below)
+   - **That's it!** The code will automatically:
+     - Store `app.db` (user accounts, key study flags, user library) at `/data/app.db`
+     - Store `medical_articles.db` (article classifications, hidden flags) at `/data/medical_articles.db`
+   - You do NOT need to set `DATABASE_URL` - the code handles it automatically
 
-4. **Update Code (if needed):**
-   - The current code uses relative paths
-   - We'll update it to check for `PERSISTENT_DATA_PATH` environment variable
-   - If set, databases will be stored on the persistent disk
+4. **⚠️ First Deploy Note:**
+   - **If you're migrating from free tier:** The first deploy will create **new empty databases** on the persistent disk
+   - Your old ephemeral databases will be ignored (they were being lost on redeploys anyway)
+   - This is a **fresh start** - but all future data will persist permanently
+   - **If you already have a persistent disk:** Existing databases will continue to work (no data loss)
+   - See `DATABASE_MIGRATION.md` for detailed migration scenarios
+
+5. **Verify Setup:**
+   - After deploying, check Render logs to confirm databases are being created
+   - Test by marking a study as key or adding to library, then redeploy
+   - Data should persist after redeploy
 
 5. **Important Limitations:**
    - ⚠️ **Single Instance Only**: Services with disks can't scale horizontally
    - ⚠️ **No Zero-Downtime Deploys**: Must stop service before deploying
    - ✅ **Data Persists**: All data survives redeploys and restarts
+   - ✅ **All User Actions Persist**: Key study flags, hidden flags, and user library additions are now permanent
 
 **Alternative: Keep SQLite but Accept Data Loss (Free Tier)**
 - If you're okay with data being reset on redeploy
