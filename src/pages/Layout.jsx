@@ -137,7 +137,7 @@ export default function Layout({ children, currentPageName }) {
       <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
         <Sidebar className="border-r border-slate-200 bg-white w-60">
           <SidebarHeader className="border-b border-slate-200 p-4 flex items-center gap-3">
-             <img src={logoImage} alt="Internal Nerds Logo" className="w-10 h-10 rounded-lg object-contain" />
+             <img src={logoImage} alt="Internal Nerds Logo" className="w-20 h-20 rounded-lg object-contain" />
               <div>
                  <h1 className="text-lg font-bold text-slate-800">Internal Nerds</h1>
               </div>
