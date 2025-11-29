@@ -665,6 +665,7 @@ export default function Dashboard() {
               statusMap={articleStatuses}
               onStatusChange={handleArticleStatusChange}
               isAdmin={currentUser?.role === 'admin'}
+              isSenior={currentUser?.role === 'senior'}
               onArticleUpdate={handleArticleUpdate}
             />
           </div>

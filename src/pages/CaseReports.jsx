@@ -366,6 +366,7 @@ export default function CaseReports() {
           statusMap={articleStatuses}
           onStatusChange={handleArticleStatusChange}
           isAdmin={currentUser?.role === 'admin'}
+          isSenior={currentUser?.role === 'senior'}
           onArticleUpdate={handleArticleUpdate}
           hideScore={true}
           hidePublicationType={true}

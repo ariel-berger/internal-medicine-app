@@ -90,7 +90,7 @@ function ReadingStatusManager({ article, statusRecord, onStatusChange }) {
   );
 }
 
-export default function MedicalArticleCard({ article, statusRecord, onStatusChange, isAdmin = false, onArticleUpdate, hideScore = false, hideTags = false, hidePublicationType = false }) {
+export default function MedicalArticleCard({ article, statusRecord, onStatusChange, isAdmin = false, isSenior = false, onArticleUpdate, hideScore = false, hideTags = false, hidePublicationType = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
@@ -261,7 +261,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
               >
                 <EyeOff className="w-4 h-4" />
               </Button>
-              {isAdmin && (
+              {(isAdmin || isSenior) && (
                 <>
                   <Button
                     variant="ghost"

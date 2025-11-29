@@ -8,6 +8,7 @@ export default function MedicalArticleGrid({
   statusMap, 
   onStatusChange, 
   isAdmin = false,
+  isSenior = false,
   onArticleUpdate,
   hideScore = false,
   hideTags = false,
@@ -70,6 +71,7 @@ export default function MedicalArticleGrid({
           statusRecord={statusMap.get(article.id)}
           onStatusChange={onStatusChange}
           isAdmin={isAdmin}
+          isSenior={isSenior}
           onArticleUpdate={onArticleUpdate}
           hideScore={hideScore}
           hideTags={hideTags}

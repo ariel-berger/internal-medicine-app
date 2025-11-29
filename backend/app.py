@@ -98,8 +98,18 @@ ADMIN_EMAILS = {
     if e and e.strip()
 }
 
+# Senior allowlist (comma-separated emails)
+SENIOR_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv('SENIOR_EMAILS', '').split(',')
+    if e and e.strip()
+}
+
 def is_admin_email(email: str) -> bool:
     return bool(email) and email.strip().lower() in ADMIN_EMAILS
+
+def is_senior_email(email: str) -> bool:
+    return bool(email) and email.strip().lower() in SENIOR_EMAILS
 
 # Import medical articles processing service
 try:
@@ -292,11 +302,19 @@ def register():
             return jsonify({'error': 'User already exists'}), 400
         
         # Create new user with hashed password
+        email = data['email']
+        if is_admin_email(email):
+            role = 'admin'
+        elif is_senior_email(email):
+            role = 'senior'
+        else:
+            role = 'user'
+        
         user = User(
-            email=data['email'],
+            email=email,
             password_hash=generate_password_hash(data['password']),
             full_name=data.get('fullName', ''),
-            role='admin' if is_admin_email(data['email']) else 'user'
+            role=role
         )
         db.session.add(user)
         db.session.commit()
@@ -354,17 +372,30 @@ def google_login():
 
         user: Optional[User] = User.query.filter_by(email=email).first()
         if not user:
+            if is_admin_email(email):
+                role = 'admin'
+            elif is_senior_email(email):
+                role = 'senior'
+            else:
+                role = 'user'
+            
             user = User(
                 email=email,
                 password_hash='google-oauth',
                 full_name=full_name,
-                role='admin' if is_admin_email(email) else 'user',
+                role=role,
             )
             db.session.add(user)
             db.session.commit()
         else:
             # Sync role with allowlist policy
-            desired_role = 'admin' if is_admin_email(email) else 'user'
+            if is_admin_email(email):
+                desired_role = 'admin'
+            elif is_senior_email(email):
+                desired_role = 'senior'
+            else:
+                desired_role = 'user'
+            
             if user.role != desired_role:
                 user.role = desired_role
                 db.session.commit()
@@ -402,7 +433,13 @@ def login():
         if not user or not check_password_hash(user.password_hash, data['password']):
             return jsonify({'error': 'Invalid credentials'}), 401
         # Optionally sync role with allowlist on login
-        desired_role = 'admin' if is_admin_email(user.email) else 'user'
+        if is_admin_email(user.email):
+            desired_role = 'admin'
+        elif is_senior_email(user.email):
+            desired_role = 'senior'
+        else:
+            desired_role = 'user'
+        
         if user.role != desired_role:
             user.role = desired_role
             db.session.commit()
@@ -962,11 +999,11 @@ def get_relevant_articles():
 @app.route('/api/medical-articles/<int:article_id>/key', methods=['PUT'])
 @jwt_required()
 def set_article_key_flag(article_id: int):
-    """Admin-only: set or clear key study flag for a medical article"""
+    """Admin or Senior: set or clear key study flag for a medical article"""
     current_user_id = int(get_jwt_identity())
     current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Admin access required'}), 403
+    if not current_user or current_user.role not in ['admin', 'senior']:
+        return jsonify({'error': 'Admin or Senior access required'}), 403
 
     data = request.get_json() or {}
     is_key = bool(data.get('is_key_study'))
@@ -990,11 +1027,11 @@ def set_article_key_flag(article_id: int):
 @app.route('/api/medical-articles/<int:article_id>/hide-dashboard', methods=['PUT'])
 @jwt_required()
 def set_article_hidden_from_dashboard(article_id: int):
-    """Admin-only: set or clear hidden_from_dashboard flag for a medical article"""
+    """Admin or Senior: set or clear hidden_from_dashboard flag for a medical article"""
     current_user_id = int(get_jwt_identity())
     current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Admin access required'}), 403
+    if not current_user or current_user.role not in ['admin', 'senior']:
+        return jsonify({'error': 'Admin or Senior access required'}), 403
 
     data = request.get_json() or {}
     is_hidden = bool(data.get('hidden_from_dashboard'))
@@ -1634,11 +1671,20 @@ try:
         except Exception as e:
             db.session.rollback()
             print(f"Warning: UserStudyStatus migration failed: {e}")
+        # Sync admin roles
         if ADMIN_EMAILS:
             for admin_email in ADMIN_EMAILS:
                 u = User.query.filter_by(email=admin_email).first()
                 if u and u.role != 'admin':
                     u.role = 'admin'
+                    db.session.commit()
+        
+        # Sync senior roles
+        if SENIOR_EMAILS:
+            for senior_email in SENIOR_EMAILS:
+                u = User.query.filter_by(email=senior_email).first()
+                if u and u.role != 'senior':
+                    u.role = 'senior'
                     db.session.commit()
 except Exception as e:
     print(f"Warning: database initialization failed at import time: {e}")

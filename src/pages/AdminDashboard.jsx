@@ -38,6 +38,7 @@ export default function AdminDashboard() {
     try {
       const currentUserData = await User.me();
       if (currentUserData.role !== 'admin') {
+        // Block both non-admins and seniors from admin dashboard
         window.location.href = '/dashboard';
         return;
       }
@@ -150,7 +151,7 @@ export default function AdminDashboard() {
         <div className="max-w-4xl mx-auto text-center">
           <Shield className="w-16 h-16 mx-auto text-slate-400 mb-4" />
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Access Denied</h1>
-          <p className="text-slate-600">You need admin privileges to access this dashboard.</p>
+          <p className="text-slate-600">You need admin privileges to access this dashboard. Senior users do not have access to this page.</p>
         </div>
       </div>
     );

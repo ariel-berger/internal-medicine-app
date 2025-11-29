@@ -99,6 +99,7 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const isAdmin = currentUser?.role === 'admin';
+  const isSenior = currentUser?.role === 'senior';
   const isSuperAdmin = currentUser?.email === SUPER_ADMIN_EMAIL;
 
   return (
