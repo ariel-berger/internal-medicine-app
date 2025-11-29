@@ -212,6 +212,9 @@ class MedicalArticlesService:
                                      email: str = None, model_provider: str = "claude") -> Dict:
         """Complete processing workflow for a specific date range."""
         try:
+            from datetime import datetime
+            start_time = datetime.now()
+            
             logger.info(f"Starting article processing for date range {start_date} to {end_date}")
             
             # Step 1: Collect articles
@@ -226,7 +229,8 @@ class MedicalArticlesService:
                     'message': f'No new articles found for date range {start_date} to {end_date}',
                     'articles_collected': 0,
                     'articles_classified': 0,
-                    'articles_stored': 0
+                    'articles_stored': 0,
+                    'processing_time_seconds': 0
                 }
             
             # Step 2: Classify articles
@@ -236,10 +240,16 @@ class MedicalArticlesService:
             
             classified_articles = classification_result['classified_articles']
             
+            # Calculate statistics from classified articles
+            stats = self._calculate_article_statistics(classified_articles)
+            
             # Step 3: Store articles
             storage_result = self.store_articles(classified_articles)
             if not storage_result['success']:
                 return storage_result
+            
+            end_time = datetime.now()
+            processing_time = (end_time - start_time).total_seconds()
             
             logger.info("✅ Date range article processing completed successfully")
             
@@ -248,7 +258,9 @@ class MedicalArticlesService:
                 'articles_collected': len(articles),
                 'articles_classified': len(classified_articles),
                 'articles_stored': storage_result['stored_count'],
-                'filtering_stats': collection_result['filtering_stats']
+                'filtering_stats': collection_result['filtering_stats'],
+                'processing_time_seconds': processing_time,
+                'statistics': stats
             }
             
         except Exception as e:
@@ -257,6 +269,58 @@ class MedicalArticlesService:
                 'success': False,
                 'error': str(e)
             }
+    
+    def _calculate_article_statistics(self, classified_articles: List[Dict]) -> Dict:
+        """Calculate statistics from classified articles."""
+        if not classified_articles:
+            return {
+                'avg_ranking_score': 0,
+                'articles_score_8_plus': 0,
+                'category_breakdown': {},
+                'top_articles': []
+            }
+        
+        # Calculate average ranking score and count high-scoring articles
+        scores = []
+        articles_score_8_plus = 0
+        category_breakdown = {}
+        
+        for article in classified_articles:
+            ranking_score = article.get('ranking_score', 0)
+            if ranking_score is not None:
+                scores.append(float(ranking_score))
+                if ranking_score >= 8:
+                    articles_score_8_plus += 1
+            
+            # Category breakdown
+            category = article.get('medical_category', 'Uncategorized')
+            category_breakdown[category] = category_breakdown.get(category, 0) + 1
+        
+        avg_score = sum(scores) / len(scores) if scores else 0
+        
+        # Get top 5 articles by ranking score
+        top_articles = sorted(
+            [a for a in classified_articles if a.get('ranking_score') is not None],
+            key=lambda x: x.get('ranking_score', 0),
+            reverse=True
+        )[:5]
+        
+        # Format top articles for email (title and score only)
+        top_articles_formatted = [
+            {
+                'title': article.get('title', 'Untitled')[:80] + ('...' if len(article.get('title', '')) > 80 else ''),
+                'score': article.get('ranking_score', 0),
+                'journal': article.get('journal', 'Unknown')
+            }
+            for article in top_articles
+        ]
+        
+        return {
+            'avg_ranking_score': round(avg_score, 2),
+            'articles_score_8_plus': articles_score_8_plus,
+            'category_breakdown': category_breakdown,
+            'top_articles': top_articles_formatted
+        }
 
 # Global service instance
 medical_articles_service = MedicalArticlesService()

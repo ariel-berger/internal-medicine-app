@@ -1345,6 +1345,7 @@ def fetch_articles_by_date():
     
     email = data.get('email') or os.getenv('PUBMED_EMAIL')
     model_provider = data.get('model', 'claude')
+    admin_email = current_user.email  # Get admin email for summary notification
     
     # Run processing in background thread to avoid timeouts
     def process_articles():
@@ -1374,10 +1375,45 @@ def fetch_articles_by_date():
                 error_msg = result.get('error', 'Unknown error')
                 print(f"\n❌ Processing failed: {error_msg}\n")
                 logger.error(f"Date range processing failed: {error_msg}")
+            
+            # Send summary email to admin
+            try:
+                from utils.email_sender import send_summary_email
+                subject = f"PubMed Article Processing Complete: {start_date} to {end_date}"
+                send_summary_email(
+                    to_email=admin_email,
+                    subject=subject,
+                    summary_data=result,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except ImportError:
+                logger.warning("Email sender module not found. Skipping email notification.")
+            except Exception as email_error:
+                logger.error(f"Failed to send summary email: {email_error}", exc_info=True)
+                
         except Exception as e:
             logger = logging.getLogger(__name__)
             print(f"\n❌ Error in background date range processing: {e}\n")
             logger.error(f"Error in background date range processing: {e}", exc_info=True)
+            
+            # Try to send error notification email
+            try:
+                from utils.email_sender import send_summary_email
+                error_result = {
+                    'success': False,
+                    'error': str(e)
+                }
+                subject = f"PubMed Article Processing Failed: {start_date} to {end_date}"
+                send_summary_email(
+                    to_email=admin_email,
+                    subject=subject,
+                    summary_data=error_result,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except Exception:
+                pass  # Don't fail if email sending fails
     
     # Start background thread
     thread = threading.Thread(target=process_articles, daemon=True)

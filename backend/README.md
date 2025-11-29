@@ -63,6 +63,13 @@ FLASK_DEBUG=True
 ANTHROPIC_API_KEY=your-anthropic-key
 # or
 GOOGLE_API_KEY=your-google-key
+
+# Email notifications (optional - for summary emails after article processing)
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_EMAIL=your-email@gmail.com
 ```
 
 ## Medical Articles Processing
@@ -76,3 +83,17 @@ The backend includes a built-in processing module at `backend/medical_processing
 - `fetch_and_classify_by_date.py` / `fetch_and_classify_weekly.py` – collection + classification entry points
 
 Classification uses Claude or Gemini automatically based on the available API key.
+
+## Email Notifications
+
+When an admin initiates "Fetch & Classify Articles from PubMed" via the admin dashboard, a summary email is automatically sent to the admin's email address upon completion. The email includes:
+
+- Processing status (success/failure)
+- Number of articles collected
+- Number of articles classified
+- Number of articles stored
+- Error details (if processing failed)
+
+To enable email notifications, configure the SMTP environment variables in your `.env` file. If SMTP credentials are not configured, the system will log a warning and continue without sending emails.
+
+**Note:** For Gmail, you'll need to use an [App Password](https://support.google.com/accounts/answer/185833) instead of your regular password.
