@@ -287,7 +287,7 @@ class MedicalArticlesService:
         
         for article in classified_articles:
             ranking_score = article.get('ranking_score', 0)
-            if ranking_score is not None:
+            if ranking_score is not None and ranking_score > 0:
                 scores.append(float(ranking_score))
                 if ranking_score >= 8:
                     articles_score_8_plus += 1
@@ -298,9 +298,9 @@ class MedicalArticlesService:
         
         avg_score = sum(scores) / len(scores) if scores else 0
         
-        # Get top 5 articles by ranking score
+        # Get top 5 articles by ranking score (only articles with score > 0)
         top_articles = sorted(
-            [a for a in classified_articles if a.get('ranking_score') is not None],
+            [a for a in classified_articles if a.get('ranking_score') is not None and a.get('ranking_score', 0) > 0],
             key=lambda x: x.get('ranking_score', 0),
             reverse=True
         )[:5]
