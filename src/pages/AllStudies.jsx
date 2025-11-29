@@ -30,13 +30,15 @@ const normalizeSpecialty = (value) =>
 function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
   const [selectedSpecialties, setSelectedSpecialties] = useState(new Set(SPECIALTIES));
   const [monthYear, setMonthYear] = useState('all');
+  const [sortBy, setSortBy] = useState('score');
 
   useEffect(() => {
     onFilterChange({
       specialties: selectedSpecialties,
-      monthYear
+      monthYear,
+      sortBy
     });
-  }, [selectedSpecialties, monthYear, onFilterChange]);
+  }, [selectedSpecialties, monthYear, sortBy, onFilterChange]);
 
   const handleSelectSpecialty = (specialty) => {
     if (specialty === '__ALL__') {
@@ -49,7 +51,7 @@ function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
 
   return (
     <Card className="professional-card p-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
         <div>
           <Label className="text-sm font-semibold text-slate-700">Specialty</Label>
           <Select onValueChange={handleSelectSpecialty}>
@@ -78,6 +80,19 @@ function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
             </SelectContent>
           </Select>
         </div>
+        <div>
+          <Label className="text-sm font-semibold text-slate-700">Sort By</Label>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-full mt-1">
+              <SelectValue placeholder="Sort by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="score">By Score</SelectItem>
+              <SelectItem value="newest">Newest to Oldest</SelectItem>
+              <SelectItem value="oldest">Oldest to Newest</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </Card>
   );
@@ -95,7 +110,8 @@ export default function AllStudies() {
   const [currentUser, setCurrentUser] = useState(null);
   const [filters, setFilters] = useState({
     specialties: new Set(SPECIALTIES),
-    monthYear: 'all'
+    monthYear: 'all',
+    sortBy: 'score'
   });
 
   useEffect(() => {
@@ -223,7 +239,7 @@ export default function AllStudies() {
   }, [allStudies, medicalArticles]);
 
   const filteredStudies = useMemo(() => {
-    return allStudies.filter(study => {
+    let filtered = allStudies.filter(study => {
       const { specialties, monthYear } = filters;
       
       const searchTermMatch = !searchTerm ||
@@ -246,10 +262,38 @@ export default function AllStudies() {
 
       return searchTermMatch && specialtyMatch && dateMatch;
     });
+
+    // Apply sorting
+    const { sortBy } = filters;
+    if (sortBy === 'newest') {
+      filtered.sort((a, b) => {
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(b.publication_date) - new Date(a.publication_date);
+      });
+    } else if (sortBy === 'oldest') {
+      filtered.sort((a, b) => {
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(a.publication_date) - new Date(b.publication_date);
+      });
+    } else {
+      // Default: by score (for studies without score, sort by date descending)
+      filtered.sort((a, b) => {
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(b.publication_date) - new Date(a.publication_date);
+      });
+    }
+
+    return filtered;
   }, [allStudies, searchTerm, filters]);
 
   const filteredArticles = useMemo(() => {
-    return medicalArticles.filter(article => {
+    let filtered = medicalArticles.filter(article => {
       const { specialties, monthYear } = filters;
       
       const searchTermMatch = !searchTerm ||
@@ -272,6 +316,40 @@ export default function AllStudies() {
 
       return searchTermMatch && specialtyMatch && dateMatch;
     });
+
+    // Apply sorting
+    const { sortBy } = filters;
+    if (sortBy === 'newest') {
+      filtered.sort((a, b) => {
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(b.publication_date) - new Date(a.publication_date);
+      });
+    } else if (sortBy === 'oldest') {
+      filtered.sort((a, b) => {
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(a.publication_date) - new Date(b.publication_date);
+      });
+    } else {
+      // Default: by score (ranking_score descending)
+      filtered.sort((a, b) => {
+        const scoreA = a.ranking_score || 0;
+        const scoreB = b.ranking_score || 0;
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA; // Higher score first
+        }
+        // If scores are equal, sort by date descending
+        if (!a.publication_date && !b.publication_date) return 0;
+        if (!a.publication_date) return 1;
+        if (!b.publication_date) return -1;
+        return new Date(b.publication_date) - new Date(a.publication_date);
+      });
+    }
+
+    return filtered;
   }, [medicalArticles, searchTerm, filters]);
 
 
