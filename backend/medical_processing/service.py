@@ -13,7 +13,14 @@ from typing import Dict, List, Optional
 from .data_collection.pubmed_client import PubMedClient
 # Lazy import classification to avoid hard dependency at startup on optional AI SDKs
 from .database.operations import batch_insert_articles
-from .database.schema import create_database, migrate_database, add_hidden_from_dashboard_column
+from .database.schema import (
+    create_database, 
+    migrate_database, 
+    add_hidden_from_dashboard_column,
+    add_new_penalty_scoring_columns,
+    add_temporality_points_column,
+    migrate_penalty_scoring_columns
+)
 from .config import JOURNALS
 
 logger = logging.getLogger(__name__)
@@ -31,6 +38,9 @@ class MedicalArticlesService:
         try:
             create_database()
             migrate_database()
+            add_new_penalty_scoring_columns()  # Adds metabolic_penalty_points and other columns
+            add_temporality_points_column()
+            migrate_penalty_scoring_columns()
             add_hidden_from_dashboard_column()
             logger.info("✅ Database initialized and migrated successfully")
             return True
