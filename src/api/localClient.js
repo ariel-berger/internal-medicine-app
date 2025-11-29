@@ -35,12 +35,29 @@ class LocalAPIClient {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        const error = new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        error.status = response.status;
+        
+        // Don't log 401 errors for auth endpoints as they're expected when not authenticated
+        const isAuthEndpoint = endpoint.includes('/auth/');
+        const is401 = response.status === 401;
+        
+        if (!(isAuthEndpoint && is401)) {
+          console.error(`API request failed: ${endpoint}`, error);
+        }
+        
+        throw error;
       }
 
       return await response.json();
     } catch (error) {
-      console.error(`API request failed: ${endpoint}`, error);
+      // Only log if it's not a 401 on an auth endpoint (expected when not authenticated)
+      const isAuthEndpoint = endpoint.includes('/auth/');
+      const is401 = error.status === 401;
+      
+      if (!(isAuthEndpoint && is401)) {
+        console.error(`API request failed: ${endpoint}`, error);
+      }
       throw error;
     }
   }

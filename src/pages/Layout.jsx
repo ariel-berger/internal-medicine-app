@@ -85,9 +85,9 @@ export default function Layout({ children, currentPageName }) {
         const user = await User.me();
         setCurrentUser(user);
       } catch (error) {
+        // Silently handle auth errors - ProtectedRoute will handle redirects
         setCurrentUser(null);
-        // Redirect to login if not authenticated
-        window.location.href = '/login';
+        // Don't redirect here as ProtectedRoute already handles authentication
       }
     };
     loadUser();
