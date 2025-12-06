@@ -270,6 +270,73 @@ class MedicalArticlesService:
                 'error': str(e)
             }
     
+    def process_articles_from_last_update(self, email: str = None, model_provider: str = "claude") -> Dict:
+        """Process articles from the last created_at timestamp to today."""
+        try:
+            from datetime import datetime, timedelta
+            from .database.operations import ArticleDatabase
+            from .database.schema import get_connection
+            
+            logger.info("Starting article processing from last update (created_at)")
+            
+            # Get the latest created_at timestamp from the database
+            with ArticleDatabase() as db:
+                latest_created_at_str = db.get_latest_created_at()
+            
+            if not latest_created_at_str:
+                # If no articles exist, fetch from the last 7 days
+                logger.info("No existing articles found. Fetching from last 7 days.")
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=7)
+                start_date_str = start_date.strftime('%Y/%m/%d')
+                end_date_str = end_date.strftime('%Y/%m/%d')
+            else:
+                # Parse the latest created_at timestamp
+                try:
+                    # Handle different timestamp formats
+                    # SQLite timestamps can be in format: 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DDTHH:MM:SS'
+                    latest_created_at_str = latest_created_at_str.replace('T', ' ')
+                    
+                    # Try parsing with microseconds
+                    try:
+                        latest_timestamp = datetime.strptime(latest_created_at_str, '%Y-%m-%d %H:%M:%S.%f')
+                    except ValueError:
+                        # Try without microseconds
+                        try:
+                            latest_timestamp = datetime.strptime(latest_created_at_str, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            # Try just date format
+                            latest_timestamp = datetime.strptime(latest_created_at_str.split()[0], '%Y-%m-%d')
+                    
+                    # Extract the date from the timestamp and add one day to avoid duplicates
+                    latest_date = latest_timestamp.date()
+                    start_date = datetime.combine(latest_date, datetime.min.time()) + timedelta(days=1)
+                    end_date = datetime.now()
+                    
+                    # Format dates for the API (publication date range)
+                    start_date_str = start_date.strftime('%Y/%m/%d')
+                    end_date_str = end_date.strftime('%Y/%m/%d')
+                    
+                    logger.info(f"Last created_at: {latest_created_at_str}, fetching articles from {start_date_str} to {end_date_str}")
+                except (ValueError, AttributeError) as e:
+                    logger.error(f"Error parsing created_at timestamp {latest_created_at_str}: {e}")
+                    # Fallback to last 7 days
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=7)
+                    start_date_str = start_date.strftime('%Y/%m/%d')
+                    end_date_str = end_date.strftime('%Y/%m/%d')
+                    logger.info(f"Falling back to last 7 days: {start_date_str} to {end_date_str}")
+            
+            # Use the existing date range processing method
+            return self.process_articles_by_date_range(start_date_str, end_date_str, email, model_provider)
+            
+        except Exception as e:
+            logger.error(f"Error processing articles from last update: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def process_single_article(self, pmid_or_url: str, email: str = None, model_provider: str = "claude") -> Dict:
         """Process a single article by PMID or URL."""
         try:

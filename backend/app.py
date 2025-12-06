@@ -12,6 +12,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import threading
 import logging
 import sys
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import pytz
 
 # Configure logging to show all logs in terminal
 logging.basicConfig(
@@ -1379,6 +1382,67 @@ def fetch_weekly_articles():
         'note': 'Processing articles from the last 7 days. This may take several minutes.'
     }), 202
 
+@app.route('/api/admin/articles/fetch-from-last-update', methods=['POST'])
+def fetch_articles_from_last_update():
+    """
+    Fetch and classify articles from the last update date to today.
+    Can be accessed by:
+    - Admin users with JWT token (for manual triggering)
+    - External cron services with CRON_SECRET_TOKEN (for automated scheduling)
+    """
+    # Check authentication: either admin JWT or cron token
+    is_admin = False
+    is_cron = _verify_cron_token()
+    
+    # Try JWT auth if cron token not present
+    if not is_cron:
+        try:
+            verify_jwt_in_request()
+            user_id = get_jwt_identity()
+            current_user = User.query.get(int(user_id))
+            is_admin = current_user and current_user.role == 'admin'
+        except Exception:
+            # JWT auth failed or not provided
+            pass
+    
+    if not is_admin and not is_cron:
+        return jsonify({'error': 'Admin access or valid cron token required'}), 403
+    
+    if not medical_articles_service:
+        return jsonify({'error': 'Medical articles processing service not available'}), 503
+    
+    # Get optional parameters
+    data = request.get_json() or {}
+    email = data.get('email') or os.getenv('PUBMED_EMAIL')
+    model_provider = data.get('model', 'claude')
+    
+    # Run processing in background thread to avoid timeouts
+    def process_articles():
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("Starting article processing from last update (background thread)")
+            result = medical_articles_service.process_articles_from_last_update(
+                email=email,
+                model_provider=model_provider
+            )
+            if result.get('success'):
+                logger.info(f"Processing from last update completed: {result.get('articles_stored', 0)} articles stored")
+            else:
+                logger.error(f"Processing from last update failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in background processing from last update: {e}")
+    
+    # Start background thread
+    thread = threading.Thread(target=process_articles, daemon=True)
+    thread.start()
+    
+    return jsonify({
+        'message': 'Article processing from last update started in background',
+        'status': 'processing',
+        'note': 'Processing articles from the last update date to today. This may take several minutes.'
+    }), 202
+
 @app.route('/api/admin/articles/fetch-by-date', methods=['POST'])
 @jwt_required()
 def fetch_articles_by_date():
@@ -1690,6 +1754,62 @@ try:
                     db.session.commit()
 except Exception as e:
     print(f"Warning: database initialization failed at import time: {e}")
+
+# Setup scheduled task for automatic article fetching
+def scheduled_fetch_articles():
+    """Scheduled task to fetch articles from last update date."""
+    task_logger = logging.getLogger(__name__)
+    
+    if not medical_articles_service:
+        task_logger.warning("Medical articles service not available for scheduled task")
+        return
+    
+    try:
+        task_logger.info("="*60)
+        task_logger.info("STARTING SCHEDULED ARTICLE FETCH (Every Saturday 12:00 GMT+2)")
+        task_logger.info("="*60)
+        
+        # Get optional parameters from environment
+        email = os.getenv('PUBMED_EMAIL')
+        model_provider = os.getenv('MODEL_PROVIDER', 'claude')
+        
+        # Process articles from last update
+        result = medical_articles_service.process_articles_from_last_update(
+            email=email,
+            model_provider=model_provider
+        )
+        
+        if result.get('success'):
+            task_logger.info("="*60)
+            task_logger.info("SCHEDULED ARTICLE FETCH COMPLETED SUCCESSFULLY")
+            task_logger.info(f"Articles collected: {result.get('articles_collected', 0)}")
+            task_logger.info(f"Articles classified: {result.get('articles_classified', 0)}")
+            task_logger.info(f"Articles stored: {result.get('articles_stored', 0)}")
+            task_logger.info("="*60)
+        else:
+            task_logger.error(f"Scheduled article fetch failed: {result.get('error', 'Unknown error')}")
+            
+    except Exception as e:
+        task_logger.error(f"Error in scheduled article fetch: {e}", exc_info=True)
+
+# Initialize scheduler
+scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Berlin'))  # GMT+2 (CEST) / GMT+1 (CET)
+# Schedule task to run every Saturday at 12:00 (GMT+2)
+scheduler.add_job(
+    func=scheduled_fetch_articles,
+    trigger=CronTrigger(day_of_week='sat', hour=12, minute=0),
+    id='weekly_article_fetch',
+    name='Weekly Article Fetch - Saturday 12:00 GMT+2',
+    replace_existing=True
+)
+
+# Start scheduler
+try:
+    scheduler.start()
+    logging.info("✅ Scheduler started successfully")
+    logging.info("📅 Scheduled task: Every Saturday at 12:00 GMT+2 (Europe/Berlin timezone)")
+except Exception as e:
+    logging.error(f"Failed to start scheduler: {e}")
 
 if __name__ == '__main__':
     with app.app_context():

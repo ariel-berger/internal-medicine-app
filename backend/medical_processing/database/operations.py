@@ -513,6 +513,23 @@ class ArticleDatabase:
         except sqlite3.Error as e:
             logger.error(f"Error searching articles: {e}")
             return []
+    
+    def get_latest_created_at(self) -> Optional[str]:
+        """Get the latest created_at timestamp from articles in the database."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT MAX(created_at) 
+                FROM articles 
+                WHERE created_at IS NOT NULL
+            ''')
+            result = cursor.fetchone()
+            if result and result[0]:
+                return result[0]
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Error getting latest created_at: {e}")
+            return None
 
 def batch_insert_articles(articles: List[Dict]) -> int:
     """Insert multiple articles in batch with enhanced classification data."""

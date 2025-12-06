@@ -31,3 +31,7 @@ requests>=2.31.0
 # AI/ML for article classification
 anthropic>=0.40.0
 google-generativeai>=0.8.0
+
+# Task scheduling
+APScheduler==3.10.4
+pytz==2024.1
