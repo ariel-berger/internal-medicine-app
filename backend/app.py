@@ -1779,6 +1779,10 @@ def scheduled_fetch_articles():
             model_provider=model_provider
         )
         
+        # Get date range from result (for email notification)
+        start_date = result.get('start_date', 'N/A')
+        end_date = result.get('end_date', 'N/A')
+        
         if result.get('success'):
             task_logger.info("="*60)
             task_logger.info("SCHEDULED ARTICLE FETCH COMPLETED SUCCESSFULLY")
@@ -1786,11 +1790,93 @@ def scheduled_fetch_articles():
             task_logger.info(f"Articles classified: {result.get('articles_classified', 0)}")
             task_logger.info(f"Articles stored: {result.get('articles_stored', 0)}")
             task_logger.info("="*60)
+            
+            # Send summary email to all admins
+            if ADMIN_EMAILS:
+                try:
+                    from utils.email_sender import send_summary_email
+                    subject = f"📅 Scheduled Article Processing Complete: {start_date} to {end_date}"
+                    
+                    # Send email to each admin
+                    emails_sent = 0
+                    for admin_email in ADMIN_EMAILS:
+                        try:
+                            success = send_summary_email(
+                                to_email=admin_email,
+                                subject=subject,
+                                summary_data=result,
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            if success:
+                                emails_sent += 1
+                                task_logger.info(f"✅ Summary email sent to {admin_email}")
+                            else:
+                                task_logger.warning(f"⚠️ Failed to send email to {admin_email}")
+                        except Exception as email_error:
+                            task_logger.error(f"Error sending email to {admin_email}: {email_error}", exc_info=True)
+                    
+                    if emails_sent > 0:
+                        task_logger.info(f"📧 Summary emails sent to {emails_sent}/{len(ADMIN_EMAILS)} admin(s)")
+                    else:
+                        task_logger.warning("⚠️ No summary emails were sent successfully")
+                except ImportError:
+                    task_logger.warning("Email sender module not found. Skipping email notification.")
+                except Exception as email_error:
+                    task_logger.error(f"Failed to send summary emails: {email_error}", exc_info=True)
+            else:
+                task_logger.warning("No admin emails configured. Skipping email notification.")
         else:
             task_logger.error(f"Scheduled article fetch failed: {result.get('error', 'Unknown error')}")
             
+            # Send error notification email to all admins
+            if ADMIN_EMAILS:
+                try:
+                    from utils.email_sender import send_summary_email
+                    subject = f"❌ Scheduled Article Processing Failed: {start_date} to {end_date}"
+                    
+                    # Send error email to each admin
+                    for admin_email in ADMIN_EMAILS:
+                        try:
+                            send_summary_email(
+                                to_email=admin_email,
+                                subject=subject,
+                                summary_data=result,
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            task_logger.info(f"Error notification email sent to {admin_email}")
+                        except Exception as email_error:
+                            task_logger.error(f"Error sending error notification to {admin_email}: {email_error}")
+                except Exception:
+                    pass  # Don't fail if email sending fails
+            
     except Exception as e:
         task_logger.error(f"Error in scheduled article fetch: {e}", exc_info=True)
+        
+        # Try to send error notification email to all admins
+        if ADMIN_EMAILS:
+            try:
+                from utils.email_sender import send_summary_email
+                error_result = {
+                    'success': False,
+                    'error': str(e)
+                }
+                subject = "❌ Scheduled Article Processing Error"
+                
+                for admin_email in ADMIN_EMAILS:
+                    try:
+                        send_summary_email(
+                            to_email=admin_email,
+                            subject=subject,
+                            summary_data=error_result,
+                            start_date='N/A',
+                            end_date='N/A'
+                        )
+                    except Exception:
+                        pass  # Don't fail if email sending fails
+            except Exception:
+                pass  # Don't fail if email sending fails
 
 # Initialize scheduler
 scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Berlin'))  # GMT+2 (CEST) / GMT+1 (CET)

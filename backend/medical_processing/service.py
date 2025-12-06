@@ -328,7 +328,13 @@ class MedicalArticlesService:
                     logger.info(f"Falling back to last 7 days: {start_date_str} to {end_date_str}")
             
             # Use the existing date range processing method
-            return self.process_articles_by_date_range(start_date_str, end_date_str, email, model_provider)
+            result = self.process_articles_by_date_range(start_date_str, end_date_str, email, model_provider)
+            
+            # Add date range to result for email notifications
+            result['start_date'] = start_date_str
+            result['end_date'] = end_date_str
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error processing articles from last update: {e}")
