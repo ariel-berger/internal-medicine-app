@@ -11,9 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { BookOpen, Search, ArrowRight, TrendingUp } from "lucide-react";
-import { parseISO, getYear, getMonth, format } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 
 import StudyGrid from "../components/dashboard/StudyGrid";
 import MedicalArticleGrid from "../components/dashboard/MedicalArticleGrid";
@@ -30,7 +27,6 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [topThreeStudies, setTopThreeStudies] = useState([]);
   // Comments feature removed
-  const [monthYear, setMonthYear] = useState('all');
 
   useEffect(() => {
     loadData();
@@ -429,17 +425,29 @@ export default function Dashboard() {
     setMedicalArticles(prev => prev.map(a => (a.id === updatedArticle.id ? { ...a, ...updatedArticle } : a)));
   };
 
+  // Filter articles to only show those retrieved in the last 14 days
+  const recentArticles = useMemo(() => {
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    
+    return medicalArticles.filter(article => {
+      if (!article.created_at) return false;
+      const createdDate = new Date(article.created_at);
+      return createdDate >= fourteenDaysAgo;
+    });
+  }, [medicalArticles]);
+
   const sortedArticles = useMemo(() => {
     const getScore = (item) => (typeof item.ranking_score === 'number' ? item.ranking_score : -Infinity);
     const key = [];
     const nonKey = [];
-    for (const a of medicalArticles) {
+    for (const a of recentArticles) {
       (a.is_key_study ? key : nonKey).push(a);
     }
     key.sort((a, b) => getScore(b) - getScore(a));
     nonKey.sort((a, b) => getScore(b) - getScore(a));
     return [...key, ...nonKey];
-  }, [medicalArticles]);
+  }, [recentArticles]);
 
   const handleStudyUpdate = (updatedStudy) => {
     if (updatedStudy?.isMedicalArticle) {
@@ -455,10 +463,10 @@ export default function Dashboard() {
   
   // Combine medical articles and regular studies for unified display
   const allStudies = useMemo(() => {
-    console.log("Combining studies - Medical articles:", medicalArticles.length, "Regular studies:", studies.length);
+    console.log("Combining studies - Medical articles:", recentArticles.length, "Regular studies:", studies.length);
     
     // Convert medical articles to study format for unified display
-    const articlesAsStudies = medicalArticles.map(article => {
+    const articlesAsStudies = recentArticles.map(article => {
       try {
         return {
           ...article,
@@ -485,27 +493,7 @@ export default function Dashboard() {
     const combined = [...articlesAsStudies, ...studies];
     console.log("Combined studies total:", combined.length);
     return combined;
-  }, [medicalArticles, studies]);
-
-  const monthYearOptions = useMemo(() => {
-    const options = new Map();
-    allStudies.forEach(item => {
-      const pubDate = item.publication_date;
-      if (!pubDate) return;
-      const date = item.isMedicalArticle ? new Date(pubDate) : parseISO(pubDate);
-      const year = getYear(date);
-      const month = getMonth(date);
-      const key = `${year}-${month}`;
-      if (!options.has(key)) {
-        options.set(key, {
-          value: key,
-          label: format(date, 'MMMM yyyy'),
-          date
-        });
-      }
-    });
-    return Array.from(options.values()).sort((a, b) => b.date - a.date);
-  }, [allStudies]);
+  }, [recentArticles, studies]);
 
   const filteredStudies = useMemo(() => {
     return allStudies.filter(study => {
@@ -517,23 +505,13 @@ export default function Dashboard() {
         (study.medical_category && study.medical_category.toLowerCase().includes(lowercasedTerm))
       );
 
-      let dateMatch = true;
-      if (monthYear !== 'all') {
-        if (!study.publication_date) dateMatch = false;
-        else {
-          const [y, m] = monthYear.split('-').map(Number);
-          const date = study.isMedicalArticle ? new Date(study.publication_date) : parseISO(study.publication_date);
-          dateMatch = getYear(date) === y && getMonth(date) === m;
-        }
-      }
-
-      return searchMatch && dateMatch;
+      return searchMatch;
     });
-  }, [allStudies, searchTerm, monthYear]);
+  }, [allStudies, searchTerm]);
 
   console.log("Filtered studies:", filteredStudies.length, "Search term:", searchTerm);
 
-  // Get filtered medical articles from filteredStudies
+  // Get filtered medical articles from filteredStudies (already filtered by date in recentArticles)
   const filteredAndSortedArticles = useMemo(() => {
     // Extract only medical articles from filteredStudies
     const filteredMedicalArticles = filteredStudies
@@ -595,22 +573,6 @@ export default function Dashboard() {
             className="pl-10 professional-card"
           />
         </div>
-        <div>
-          <Label className="text-sm font-semibold text-slate-700">Date Published</Label>
-          <Select value={monthYear} onValueChange={setMonthYear}>
-            <SelectTrigger className="w-full mt-1">
-              <SelectValue placeholder="All time" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Time</SelectItem>
-              {monthYearOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       <div className="lg:col-span-3">
@@ -645,7 +607,7 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <h2 className="text-lg lg:text-xl font-bold text-slate-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-slate-600" />
-                Top Medical Articles
+                Recently Published Articles
               </h2>
               <div className="flex items-center gap-4">
                 <div className="text-sm text-slate-600">

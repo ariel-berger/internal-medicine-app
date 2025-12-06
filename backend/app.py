@@ -923,7 +923,8 @@ def get_relevant_articles():
                    ec.ranking_score, ec.clinical_bottom_line, ec.tags, ec.participants,
                    ec.focus_points, ec.type_points, ec.prevalence_points, 
                    ec.hospitalization_points, ec.impact_factor_points,
-                   COALESCE(ec.hidden_from_dashboard, 0) as hidden_from_dashboard
+                   COALESCE(ec.hidden_from_dashboard, 0) as hidden_from_dashboard,
+                   a.created_at
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
             WHERE ec.is_relevant = 1 {hidden_clause}
@@ -979,7 +980,8 @@ def get_relevant_articles():
                 'hospitalization_points': article[19],
                 'impact_factor_points': article[20],
                 'is_key_study': article[0] in key_ids,
-                'hidden_from_dashboard': bool(article[21]) if len(article) > 21 else False
+                'hidden_from_dashboard': bool(article[21]) if len(article) > 21 else False,
+                'created_at': article[22] if len(article) > 22 else None
             })
         
         return jsonify({
