@@ -91,9 +91,60 @@ export default function MyLibrary() {
       setStatuses(statusMap);
       setStudies(libraryStudies);
 
-      // Load medical article statuses from localStorage and filter relevant articles
-      const statusMapArticles = getArticleStatusMap();
-      setArticleStatuses(statusMapArticles);
+      // Load medical article statuses from backend (filter by article_id)
+      const backendArticleStatuses = new Map(
+        userStatuses
+          .filter(s => s.article_id) // Filter for medical article statuses
+          .map(s => [s.article_id, s])
+      );
+      
+      // Load from localStorage for backward compatibility and migration
+      const localArticleStatuses = getArticleStatusMap();
+      
+      // Sync localStorage data to backend (one-time migration)
+      if (localArticleStatuses.size > 0) {
+        const syncPromises = [];
+        for (const [articleId, localStatus] of localArticleStatuses) {
+          // Only sync if not already in backend
+          if (!backendArticleStatuses.has(articleId) && localStatus?.status) {
+            syncPromises.push(
+              UserStudyStatus.create({ 
+                article_id: articleId, 
+                status: localStatus.status 
+              }).catch(e => {
+                console.log(`Failed to sync article ${articleId} to backend:`, e);
+                return null;
+              })
+            );
+          }
+        }
+        if (syncPromises.length > 0) {
+          console.log(`Syncing ${syncPromises.length} article statuses from localStorage to backend...`);
+          await Promise.allSettled(syncPromises);
+          
+          // Reload user statuses after sync
+          try {
+            const updatedUserStatuses = await UserStudyStatus.filter({ created_by: currentUser.email });
+            const updatedBackendArticleStatuses = new Map(
+              updatedUserStatuses
+                .filter(s => s.article_id)
+                .map(s => [s.article_id, s])
+            );
+            setArticleStatuses(updatedBackendArticleStatuses);
+          } catch (e) {
+            console.error("Failed to reload statuses after sync:", e);
+            // Fallback to original backend statuses
+            setArticleStatuses(backendArticleStatuses);
+          }
+        } else {
+          // No sync needed, use backend statuses
+          setArticleStatuses(backendArticleStatuses);
+        }
+      } else {
+        // No local storage, use backend statuses
+        setArticleStatuses(backendArticleStatuses);
+      }
+      
       setArticles(relevantArticles);
     } catch (error) {
       console.error("Error loading library data:", error);
@@ -105,18 +156,107 @@ export default function MyLibrary() {
     loadLibraryData();
   };
 
-  const handleArticleStatusChange = (articleId, newStatusRecord) => {
-    setArticleStatuses(prev => {
-      const next = new Map(prev);
+  const handleArticleStatusChange = async (articleId, newStatusRecord) => {
+    // Update local storage for backward compatibility
+    if (newStatusRecord) {
+      setArticleStatus(articleId, newStatusRecord.status);
+    } else {
+      setArticleStatus(articleId, null);
+    }
+    
+    // Save to backend for cross-device sync
+    try {
+      const existingStatus = articleStatuses.get(articleId);
       if (newStatusRecord) {
-        next.set(articleId, newStatusRecord);
-        setArticleStatus(articleId, newStatusRecord.status);
+        if (existingStatus && existingStatus.id) {
+          // Update existing backend record
+          try {
+            const updatedRecord = await UserStudyStatus.update(existingStatus.id, { status: newStatusRecord.status });
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, updatedRecord);
+              return newMap;
+            });
+          } catch (e) {
+            console.log("Failed to update in backend, trying to create:", e);
+            // If update fails, try creating
+            try {
+              const newRecord = await UserStudyStatus.create({ article_id: articleId, status: newStatusRecord.status });
+              setArticleStatuses(prevMap => {
+                const newMap = new Map(prevMap);
+                newMap.set(articleId, newRecord);
+                return newMap;
+              });
+            } catch (createError) {
+              console.error("Failed to create in backend:", createError);
+              // Still update local state even if backend fails
+              setArticleStatuses(prevMap => {
+                const newMap = new Map(prevMap);
+                newMap.set(articleId, newStatusRecord);
+                return newMap;
+              });
+            }
+          }
+        } else {
+          // Create new backend record
+          try {
+            const newRecord = await UserStudyStatus.create({ article_id: articleId, status: newStatusRecord.status });
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, newRecord);
+              return newMap;
+            });
+          } catch (e) {
+            console.error("Failed to create in backend:", e);
+            // Still update local state even if backend fails
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.set(articleId, newStatusRecord);
+              return newMap;
+            });
+          }
+        }
       } else {
-        next.delete(articleId);
-        setArticleStatus(articleId, null);
+        // Remove status
+        if (existingStatus && existingStatus.id) {
+          try {
+            await UserStudyStatus.delete(existingStatus.id);
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.delete(articleId);
+              return newMap;
+            });
+          } catch (e) {
+            console.log("Failed to delete from backend (may not exist):", e);
+            // Still update local state
+            setArticleStatuses(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.delete(articleId);
+              return newMap;
+            });
+          }
+        } else {
+          // No backend record, just update local state
+          setArticleStatuses(prevMap => {
+            const newMap = new Map(prevMap);
+            newMap.delete(articleId);
+            return newMap;
+          });
+        }
       }
-      return next;
-    });
+    } catch (error) {
+      console.error("Error updating article status:", error);
+      // Still update local state even if backend fails
+      setArticleStatuses(prevMap => {
+        const newMap = new Map(prevMap);
+        if (newStatusRecord) {
+          newMap.set(articleId, newStatusRecord);
+        } else {
+          newMap.delete(articleId);
+        }
+        return newMap;
+      });
+    }
   };
 
   const handleStudyUpdate = (updatedStudy) => {
