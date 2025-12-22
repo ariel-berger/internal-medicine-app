@@ -296,7 +296,13 @@ def health_check():
 def register():
     """User registration"""
     try:
-        data = request.get_json() or {}
+        # Handle JSON parsing errors, especially for Safari
+        try:
+            data = request.get_json() or {}
+        except Exception as json_error:
+            print(f"JSON parsing error in /api/auth/register: {json_error}")
+            return jsonify({'error': 'Invalid request format. Please try again.'}), 400
+        
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
         
@@ -353,11 +359,17 @@ def google_login():
         print("Google auth not available - libraries not installed")
         return jsonify({'error': 'Google auth not available on server. Please install google-auth library.'}), 503
 
-    data = request.get_json() or {}
+    # Handle JSON parsing errors, especially for Safari
+    try:
+        data = request.get_json() or {}
+    except Exception as json_error:
+        print(f"JSON parsing error in /api/auth/google: {json_error}")
+        return jsonify({'error': 'Invalid request format. Please try again.'}), 400
+    
     token = data.get('idToken') or data.get('credential')
     client_id = os.getenv('GOOGLE_CLIENT_ID')
     if not token:
-        return jsonify({'error': 'Missing idToken'}), 400
+        return jsonify({'error': 'Missing Google authentication token. Please try signing in again.'}), 400
     if not client_id:
         print("GOOGLE_CLIENT_ID environment variable is not set")
         return jsonify({'error': 'Server missing GOOGLE_CLIENT_ID environment variable'}), 500
@@ -428,7 +440,13 @@ def google_login():
 def login():
     """User login"""
     try:
-        data = request.get_json() or {}
+        # Handle JSON parsing errors, especially for Safari
+        try:
+            data = request.get_json() or {}
+        except Exception as json_error:
+            print(f"JSON parsing error in /api/auth/login: {json_error}")
+            return jsonify({'error': 'Invalid request format. Please try again.'}), 400
+        
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
         

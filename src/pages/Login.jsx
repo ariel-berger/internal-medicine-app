@@ -40,10 +40,27 @@ export default function Login() {
             setIsLoading(true);
             setError('');
             try {
+              if (!response || !response.credential) {
+                throw new Error('Google sign-in failed: No credential received');
+              }
               await localClient.googleLogin(response.credential);
               navigate('/dashboard');
             } catch (e) {
-              setError(e.message || 'Google sign-in failed');
+              // Extract meaningful error message
+              let errorMessage = e.message || 'Google sign-in failed';
+              
+              // Handle network errors
+              if (e.status === 0 || e.name === 'TypeError') {
+                errorMessage = 'Network error: Please check your internet connection and try again.';
+              } else if (e.status === 400) {
+                errorMessage = e.message || 'Google sign-in failed. Please try again.';
+              } else if (e.status === 500) {
+                errorMessage = 'Server error during Google sign-in. Please try again later.';
+              } else if (errorMessage.startsWith('HTTP ')) {
+                errorMessage = 'Google sign-in failed. Please try again.';
+              }
+              
+              setError(errorMessage);
             } finally {
               setIsLoading(false);
             }
@@ -52,7 +69,9 @@ export default function Login() {
         window.google.accounts.id.renderButton(googleButtonRef.current, {
           theme: 'outline',
           size: 'large',
-          width: 360,
+          width: '100%', // Use 100% width for better mobile compatibility
+          text: 'signin_with', // Use standard sign-in text
+          locale: 'en',
         });
         console.log('Google Sign-In: Button rendered successfully');
         return true;
@@ -101,7 +120,25 @@ export default function Login() {
       }
       navigate('/dashboard');
     } catch (error) {
-      setError(error.message || (isRegister ? 'Registration failed.' : 'Login failed. Please check your credentials.'));
+      // Extract meaningful error message
+      let errorMessage = error.message;
+      
+      // Handle network errors
+      if (error.status === 0 || error.name === 'TypeError') {
+        errorMessage = 'Network error: Please check your internet connection and try again.';
+      } else if (error.status === 400) {
+        // Use the error message from the API response
+        errorMessage = error.message || (isRegister ? 'Registration failed. Please check your information.' : 'Login failed. Please check your credentials.');
+      } else if (error.status === 401) {
+        errorMessage = 'Invalid email or password. Please try again.';
+      } else if (error.status === 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (!errorMessage || errorMessage.startsWith('HTTP ')) {
+        // Fallback for generic HTTP errors
+        errorMessage = isRegister ? 'Registration failed. Please try again.' : 'Login failed. Please check your credentials and try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

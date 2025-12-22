@@ -34,9 +34,36 @@ class LocalAPIClient {
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const error = new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        let errorData = {};
+        let errorMessage = '';
+        
+        // Try to parse JSON error response
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            errorData = await response.json();
+          } else {
+            // If not JSON, try to get text
+            const text = await response.text();
+            if (text) {
+              try {
+                errorData = JSON.parse(text);
+              } catch {
+                errorMessage = text;
+              }
+            }
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, use status text
+          console.warn('Failed to parse error response:', parseError);
+        }
+        
+        // Extract error message: backend returns 'error' field, but also check 'message' for compatibility
+        errorMessage = errorData.error || errorData.message || errorMessage || response.statusText || `HTTP ${response.status}`;
+        
+        const error = new Error(errorMessage);
         error.status = response.status;
+        error.data = errorData;
         
         // Don't log 401 errors for auth endpoints as they're expected when not authenticated
         const isAuthEndpoint = endpoint.includes('/auth/');
@@ -51,13 +78,27 @@ class LocalAPIClient {
 
       return await response.json();
     } catch (error) {
-      // Only log if it's not a 401 on an auth endpoint (expected when not authenticated)
+      // Re-throw if it's already our formatted error
+      if (error.status) {
+        throw error;
+      }
+      
+      // Handle network errors or other fetch failures
       const isAuthEndpoint = endpoint.includes('/auth/');
       const is401 = error.status === 401;
       
       if (!(isAuthEndpoint && is401)) {
         console.error(`API request failed: ${endpoint}`, error);
       }
+      
+      // Create a user-friendly error message for network issues
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        const networkError = new Error('Network error: Please check your internet connection and try again.');
+        networkError.status = 0;
+        networkError.originalError = error;
+        throw networkError;
+      }
+      
       throw error;
     }
   }
@@ -112,8 +153,9 @@ class LocalAPIClient {
     return response;
   }
 
-  async googleLogin(idToken) {
-    const response = await this.post('/auth/google', { idToken });
+  async googleLogin(credential) {
+    // Backend accepts both 'idToken' and 'credential' - send as 'credential' to match Google's naming
+    const response = await this.post('/auth/google', { credential, idToken: credential });
     if (response.token) {
       this.setToken(response.token);
     }
