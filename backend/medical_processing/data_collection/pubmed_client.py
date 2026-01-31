@@ -237,8 +237,8 @@ class PubMedClient:
             # Authors and affiliations
             authors_data = self._extract_authors(article)
             
-            # Publication date
-            pub_date = self._extract_publication_date(article)
+            # Publication date (prefer electronic/epub date, fall back to print PubDate)
+            pub_date = self._extract_publication_date(article_elem)
             
             # DOI
             doi_elem = article.find('.//ELocationID[@EIdType="doi"]')
@@ -323,34 +323,54 @@ class PubMedClient:
             'affiliations_string': "; ".join(affiliations)
         }
     
-    def _extract_publication_date(self, article_elem) -> Optional[str]:
-        """Extract publication date."""
-        pub_date = article_elem.find('.//PubDate')
+    def _parse_date_node(self, node) -> Optional[str]:
+        """Build YYYY-MM-DD from a node containing Year, Month, Day (e.g. PubDate, ArticleDate, PubMedPubDate)."""
+        if node is None:
+            return None
+        year_elem = node.find('Year')
+        month_elem = node.find('Month')
+        day_elem = node.find('Day')
+        if year_elem is None or year_elem.text is None:
+            return None
+        date_str = year_elem.text
+        if month_elem is not None and month_elem.text:
+            month_text = month_elem.text.strip()
+            if month_text.isdigit():
+                date_str += f"-{month_text.zfill(2)}"
+            else:
+                month_mapping = {
+                    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+                    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+                    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+                }
+                month_num = month_mapping.get(month_text, '01')
+                date_str += f"-{month_num}"
+        if day_elem is not None and day_elem.text:
+            date_str += f"-{day_elem.text.zfill(2)}"
+        return date_str
+
+    def _extract_publication_date(self, pubmed_article_elem) -> Optional[str]:
+        """Extract publication date, preferring electronic/epub date over print date.
+
+        Tries in order: ArticleDate (DateType=Electronic), PubMedPubDate (PubStatus=epublish),
+        then Journal PubDate. Ensures we never miss articles that only have print date.
+        """
+        # 1. ArticleDate with DateType="Electronic" (electronic publication date)
+        for article_date in pubmed_article_elem.findall('.//ArticleDate'):
+            if article_date.get('DateType') == 'Electronic':
+                parsed = self._parse_date_node(article_date)
+                if parsed:
+                    return parsed
+        # 2. PubMedPubDate with PubStatus="epublish" (epub date in History)
+        for pub_date in pubmed_article_elem.findall('.//PubMedPubDate'):
+            if pub_date.get('PubStatus') == 'epublish':
+                parsed = self._parse_date_node(pub_date)
+                if parsed:
+                    return parsed
+        # 3. Fall back to print PubDate (Journal/JournalIssue/PubDate)
+        pub_date = pubmed_article_elem.find('.//PubDate')
         if pub_date is not None:
-            year = pub_date.find('.//Year')
-            month = pub_date.find('.//Month')
-            day = pub_date.find('.//Day')
-            
-            if year is not None:
-                date_str = year.text
-                if month is not None:
-                    # Convert month name to number if it's not already a digit
-                    month_text = month.text
-                    if month_text.isdigit():
-                        date_str += f"-{month_text.zfill(2)}"
-                    else:
-                        # Convert month name to number
-                        month_mapping = {
-                            'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-                            'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-                            'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-                        }
-                        month_num = month_mapping.get(month_text, '01')
-                        date_str += f"-{month_num}"
-                if day is not None:
-                    date_str += f"-{day.text.zfill(2)}"
-                return date_str
-        
+            return self._parse_date_node(pub_date)
         return None
     
     def _extract_keywords(self, medline_citation) -> str:
