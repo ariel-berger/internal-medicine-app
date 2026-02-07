@@ -101,10 +101,12 @@ export const Comment = {
 
 // UserStudyStatus entity
 export const UserStudyStatus = {
-  async list(sortBy = '-created_date') {
+  async list(sortBy = '-created_date', options = {}) {
     const params = new URLSearchParams();
     if (sortBy) params.append('sort', sortBy);
-    
+    if (options.created_since_days != null) {
+      params.append('created_since_days', String(options.created_since_days));
+    }
     const queryString = params.toString();
     return localClient.get(`/user-study-status${queryString ? `?${queryString}` : ''}`);
   },

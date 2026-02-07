@@ -3,7 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import text
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 from pathlib import Path
@@ -1174,11 +1174,15 @@ def get_user_study_status():
         # Get query parameters
         created_by = request.args.get('created_by')
         sort = request.args.get('sort', '-created_date')
+        created_since_days = request.args.get('created_since_days', type=int)
         
         # Build query
         query = UserStudyStatus.query
         if created_by:
             query = query.filter_by(created_by=created_by)
+        if created_since_days is not None and created_since_days > 0:
+            since = datetime.utcnow() - timedelta(days=created_since_days)
+            query = query.filter(UserStudyStatus.created_date >= since)
         
         # Apply sorting
         if sort.startswith('-'):

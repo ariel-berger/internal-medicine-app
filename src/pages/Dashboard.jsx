@@ -86,7 +86,7 @@ export default function Dashboard() {
       ] = await Promise.allSettled([
           Study.list("-publication_date", 10), // Fetch only the 10 most recent studies
           currentUser ? UserStudyStatus.filter({ created_by: currentUser.email }, "-created_date") : Promise.resolve([]),
-          UserStudyStatus.list("-created_date"),
+          UserStudyStatus.list("-created_date", { created_since_days: 14 }), // For trending: only statuses from last 14 days
       ]);
 
       // Handle the results
@@ -193,19 +193,9 @@ export default function Dashboard() {
 
       // Comments removed
 
-      // For trending: only count library additions from the last 14 days
-      const fourteenDaysAgo = new Date();
-      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-      const recentStatusesForTrending = allStatuses.filter(s => {
-        const dateStr = s.created_date;
-        if (!dateStr) return false; // Exclude if backend didn't return a date
-        const createdDate = new Date(dateStr);
-        if (isNaN(createdDate.getTime())) return false;
-        return createdDate >= fourteenDaysAgo;
-      });
-
+      // Backend already returned only statuses from the last 14 days (created_since_days: 14)
       // Count library additions (both "read" and "want_to_read" statuses) for both studies and articles
-      const libraryCounts = recentStatusesForTrending
+      const libraryCounts = allStatuses
         .filter(s => s.status === 'read' || s.status === 'want_to_read')
         .reduce((acc, s) => {
           // Count by study_id for regular studies
@@ -235,16 +225,26 @@ export default function Dashboard() {
       // Create a map of medical articles by ID
       const articleMap = new Map(medicalArticlesData.map(a => [a.id, a]));
 
+      // Only include content published in the last 12 months so old articles don't dominate trending
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+      const isRecentEnough = (item) => {
+        const d = item.publication_date || item.epub_date;
+        if (!d) return false;
+        const t = new Date(d).getTime();
+        return !isNaN(t) && t >= twelveMonthsAgo.getTime();
+      };
+
       // Combine studies and articles with their library counts
       const trendingItems = [];
       
-      // Add regular studies
+      // Add regular studies (only if published in last 12 months)
       Object.entries(libraryCounts)
         .filter(([key]) => key.startsWith('study_'))
         .forEach(([key, count]) => {
           const studyId = parseInt(key.replace('study_', ''));
           const study = studyMap.get(studyId);
-          if (study) {
+          if (study && isRecentEnough(study)) {
             trendingItems.push({
               ...study,
               libraryCount: count,
@@ -253,13 +253,13 @@ export default function Dashboard() {
           }
         });
       
-      // Add medical articles
+      // Add medical articles (only if published in last 12 months)
       Object.entries(libraryCounts)
         .filter(([key]) => key.startsWith('article_'))
         .forEach(([key, count]) => {
           const articleId = parseInt(key.replace('article_', ''));
           const article = articleMap.get(articleId);
-          if (article) {
+          if (article && isRecentEnough(article)) {
             // Convert article to study format for compatibility
             trendingItems.push({
               ...article,
