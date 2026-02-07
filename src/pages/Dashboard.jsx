@@ -193,15 +193,15 @@ export default function Dashboard() {
 
       // Comments removed
 
-      // For trending: only count library additions from the last 28 days
-      const twentyEightDaysAgo = new Date();
-      twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
+      // For trending: only count library additions from the last 14 days
+      const fourteenDaysAgo = new Date();
+      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
       const recentStatusesForTrending = allStatuses.filter(s => {
         const dateStr = s.created_date;
         if (!dateStr) return false; // Exclude if backend didn't return a date
         const createdDate = new Date(dateStr);
         if (isNaN(createdDate.getTime())) return false;
-        return createdDate >= twentyEightDaysAgo;
+        return createdDate >= fourteenDaysAgo;
       });
 
       // Count library additions (both "read" and "want_to_read" statuses) for both studies and articles
