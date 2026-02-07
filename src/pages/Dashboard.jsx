@@ -198,8 +198,9 @@ export default function Dashboard() {
       twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
       const recentStatusesForTrending = allStatuses.filter(s => {
         const dateStr = s.created_date;
-        if (!dateStr) return false;
+        if (!dateStr) return false; // Exclude if backend didn't return a date
         const createdDate = new Date(dateStr);
+        if (isNaN(createdDate.getTime())) return false;
         return createdDate >= twentyEightDaysAgo;
       });
 
@@ -270,15 +271,27 @@ export default function Dashboard() {
           }
         });
 
-      // Sort by library count (descending) and take top 3
-      // Prioritize articles (medical articles) over regular studies if counts are equal
+      // Sort by library count (descending), then by recency (publication date descending), then take top 3
+      // Prioritize articles over regular studies if counts are equal; then prefer more recent content
+      const publicationTime = (item) => {
+        const d = item.publication_date || item.epub_date;
+        if (!d) return 0;
+        const t = new Date(d).getTime();
+        return isNaN(t) ? 0 : t;
+      };
       const topThree = trendingItems
         .sort((a, b) => {
           // First sort by library count
           if (b.libraryCount !== a.libraryCount) {
             return b.libraryCount - a.libraryCount;
           }
-          // If counts are equal, prioritize medical articles
+          // Then by recency (newer publication date first)
+          const timeA = publicationTime(a);
+          const timeB = publicationTime(b);
+          if (timeB !== timeA) {
+            return timeB - timeA;
+          }
+          // If counts and dates equal, prioritize medical articles
           if (a.isMedicalArticle !== b.isMedicalArticle) {
             return a.isMedicalArticle ? -1 : 1;
           }
