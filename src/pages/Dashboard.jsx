@@ -445,7 +445,19 @@ export default function Dashboard() {
   // Comments removed
 
   const handleArticleUpdate = (updatedArticle) => {
-    setMedicalArticles(prev => prev.map(a => (a.id === updatedArticle.id ? { ...a, ...updatedArticle } : a)));
+    setMedicalArticles((prev) => {
+      // Match server behavior (excludeHidden): once hidden, drop from the list so the next-ranked article fills the slot.
+      if (updatedArticle.hidden_from_dashboard) {
+        return prev.filter((a) => a.id !== updatedArticle.id);
+      }
+      const exists = prev.some((a) => a.id === updatedArticle.id);
+      if (!exists) {
+        return [...prev, updatedArticle];
+      }
+      return prev.map((a) =>
+        a.id === updatedArticle.id ? { ...a, ...updatedArticle } : a
+      );
+    });
   };
 
   // Filter articles to only show those retrieved in the last 14 days
