@@ -922,7 +922,8 @@ def get_relevant_articles():
         limit = int(request.args.get('limit', 50))  # Increased default limit for All Studies page
         offset = int(request.args.get('offset', 0))
         sort_by = request.args.get('sort', 'ranking_score')  # ranking_score, publication_date, title
-        
+        created_since_days = request.args.get('created_since_days', type=int)
+
         # Build ORDER BY clause
         if sort_by == 'ranking_score':
             order_clause = 'ORDER BY ec.ranking_score DESC, a.publication_date DESC'
@@ -932,37 +933,48 @@ def get_relevant_articles():
             order_clause = 'ORDER BY a.title ASC'
         else:
             order_clause = 'ORDER BY ec.ranking_score DESC, a.publication_date DESC'
-        
+
         # Check if we should exclude hidden articles (for dashboard)
         exclude_hidden = request.args.get('exclude_hidden', 'false').lower() == 'true'
         hidden_clause = 'AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)' if exclude_hidden else ''
-        
+
+        # Restrict to articles added in the last N days (applied before LIMIT, so
+        # recently-added articles aren't crowded out of the ranking cutoff by
+        # older, higher-scoring articles accumulated over time)
+        date_params = []
+        date_clause = ''
+        if created_since_days is not None and created_since_days > 0:
+            since = datetime.utcnow() - timedelta(days=created_since_days)
+            date_clause = 'AND a.created_at >= ?'
+            date_params = [since.strftime('%Y-%m-%d %H:%M:%S')]
+
         # Get relevant articles with enhanced classification data
         query = f"""
-            SELECT a.id, a.pmid, a.title, a.abstract, a.journal, a.authors, 
+            SELECT a.id, a.pmid, a.title, a.abstract, a.journal, a.authors,
                    a.publication_date, a.doi, a.url, a.medical_category, a.article_type, a.publication_type,
                    ec.ranking_score, ec.clinical_bottom_line, ec.tags, ec.participants,
-                   ec.focus_points, ec.type_points, ec.prevalence_points, 
+                   ec.focus_points, ec.type_points, ec.prevalence_points,
                    ec.hospitalization_points, ec.impact_factor_points,
                    COALESCE(ec.hidden_from_dashboard, 0) as hidden_from_dashboard,
                    a.created_at
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
-            WHERE ec.is_relevant = 1 {hidden_clause}
+            WHERE ec.is_relevant = 1 {hidden_clause} {date_clause}
             {order_clause}
             LIMIT ? OFFSET ?
         """
-        
-        cursor.execute(query, (limit, offset))
+
+        cursor.execute(query, (*date_params, limit, offset))
         articles = cursor.fetchall()
-        
-        # Get total count of relevant articles (respecting hidden filter)
+
+        # Get total count of relevant articles (respecting hidden and date filters)
         count_query = f"""
-            SELECT COUNT(*) 
-            FROM enhanced_classifications ec
-            WHERE ec.is_relevant = 1 {hidden_clause}
+            SELECT COUNT(*)
+            FROM articles a
+            JOIN enhanced_classifications ec ON a.id = ec.article_id
+            WHERE ec.is_relevant = 1 {hidden_clause} {date_clause}
         """
-        cursor.execute(count_query)
+        cursor.execute(count_query, tuple(date_params))
         total_count = cursor.fetchone()[0]
         
         # Gather IDs to check key flags

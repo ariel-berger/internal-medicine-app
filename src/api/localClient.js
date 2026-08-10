@@ -173,7 +173,8 @@ class LocalAPIClient {
     if (params.offset) queryParams.append('offset', params.offset);
     if (params.sort) queryParams.append('sort', params.sort);
     if (params.excludeHidden !== undefined) queryParams.append('exclude_hidden', params.excludeHidden ? 'true' : 'false');
-    
+    if (params.createdSinceDays != null) queryParams.append('created_since_days', String(params.createdSinceDays));
+
     const endpoint = `/medical-articles/relevant${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
     return this.get(endpoint);
   }

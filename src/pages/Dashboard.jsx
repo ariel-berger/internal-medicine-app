@@ -51,10 +51,11 @@ export default function Dashboard() {
       console.log("Loading medical articles...");
       let medicalArticlesData = [];
       try {
-        medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
-          limit: 50, 
+        medicalArticlesData = await MedicalArticle.getRelevantArticles({
+          limit: 50,
           sort: 'ranking_score',
-          excludeHidden: true  // Exclude hidden articles from dashboard
+          excludeHidden: true,  // Exclude hidden articles from dashboard
+          createdSinceDays: 14  // Only articles added in the last 2 weekly runs, filtered before the ranking-score cutoff
         });
         // Filter out case reports from dashboard
         const isCaseReport = (article) => {
