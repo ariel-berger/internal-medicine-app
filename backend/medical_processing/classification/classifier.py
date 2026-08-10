@@ -546,9 +546,9 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
         
         neurology_penalty_points = 0
         
-        # Rule 1: -2 points if the study is from the journal "Neurology"
+        # Rule 1: -4 points if the study is from the journal "Neurology"
         if journal_name == 'neurology':
-            neurology_penalty_points = -2
+            neurology_penalty_points = -4
             logger.info(f"Neurology penalty applied: {journal_name}")
         
         return {
