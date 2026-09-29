@@ -4,7 +4,7 @@ import json
 import os
 import time
 from dotenv import load_dotenv
-from medical_processing.config import MEDICAL_CATEGORIES
+from medical_processing.config import MEDICAL_CATEGORIES, CLAUDE_MODEL, GEMINI_MODEL
 import anthropic
 import google.generativeai as genai
 
@@ -22,7 +22,8 @@ class MedicalArticleClassifier:
         Initialize the classifier with specified model provider.
         
         Args:
-            model_provider: Either "claude" or "gemini" (default: "claude" for Claude Sonnet 4.5)
+            model_provider: Either "claude" or "gemini" (default: "claude");
+                the concrete model IDs live in config.CLAUDE_MODEL / config.GEMINI_MODEL
         """
         self.medical_categories = MEDICAL_CATEGORIES
         self.model_provider = model_provider.lower()
@@ -41,8 +42,8 @@ class MedicalArticleClassifier:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
         
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = "claude-sonnet-4-5-20250929"  # Latest and most advanced model
-        logger.info("Initialized Claude classifier")
+        self.model = CLAUDE_MODEL
+        logger.info(f"Initialized Claude classifier ({self.model})")
     
     def _init_gemini(self):
         """Initialize Gemini client."""
@@ -51,7 +52,7 @@ class MedicalArticleClassifier:
             raise ValueError("GOOGLE_API_KEY environment variable not set")
         
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-pro')
+        self.model = genai.GenerativeModel(GEMINI_MODEL)
         logger.info("Initialized Gemini classifier")
     
     
@@ -702,12 +703,19 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
             if self.model_provider == "claude":
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=2500,
-                    temperature=0.01,  # Low temperature for consistent classification
+                    # Thinking is on by default on Sonnet 5.x and shares this budget,
+                    # so leave headroom for the reasoning plus the JSON answer
+                    max_tokens=8000,
+                    # temperature is rejected by Sonnet 5.x; determinism now comes
+                    # from the prompt + structured JSON output instead
                     messages=[{"role": "user", "content": prompt}],
-                    timeout=60.0  # 60 second timeout to prevent hanging
+                    timeout=120.0  # timeout to prevent hanging
                 )
-                return response.content[0].text
+                # The response may lead with thinking blocks - take the first text block
+                text_blocks = [b.text for b in response.content if b.type == "text"]
+                if not text_blocks:
+                    raise ValueError(f"No text block in response (stop_reason={response.stop_reason})")
+                return text_blocks[0]
             elif self.model_provider == "gemini":
                 response = self.model.generate_content(
                     prompt,
@@ -745,8 +753,9 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
     
 
 def classify_articles_batch(articles: List[Dict], model_provider: str = "claude") -> List[Dict]:
-    """Classify a batch of articles using inclusion-based filtering (default: Claude Sonnet 4.5)."""
+    """Classify a batch of articles using inclusion-based filtering (default: Claude)."""
     classifier = MedicalArticleClassifier(model_provider=model_provider)
+    model_id = CLAUDE_MODEL if classifier.model_provider == "claude" else GEMINI_MODEL
     classified_articles = []
     
     for i, article in enumerate(articles):
@@ -758,6 +767,7 @@ def classify_articles_batch(articles: List[Dict], model_provider: str = "claude"
             
             article_copy = article.copy()
             article_copy.update(result)
+            article_copy['classifier_version'] = model_id
             
             classified_articles.append(article_copy)
             
@@ -770,6 +780,7 @@ def classify_articles_batch(articles: List[Dict], model_provider: str = "claude"
             # Add unclassified version with default values
             article_copy = article.copy()
             article_copy.update(classifier._get_default_enhanced_response())
+            article_copy['classifier_version'] = model_id
             classified_articles.append(article_copy)
     
     logger.info(f"Processed {len(classified_articles)} articles using {model_provider} with inclusion-based filtering")
@@ -778,7 +789,7 @@ def classify_articles_batch(articles: List[Dict], model_provider: str = "claude"
 
 
 if __name__ == "__main__":
-    # Test inclusion-based classification with Claude Sonnet 4.5
+    # Test inclusion-based classification with the configured Claude model
     test_article = {
         'title': 'Randomized controlled trial of statins in cardiovascular disease',
         'abstract': 'This study investigated the effects of statin therapy on cardiac outcomes...',
@@ -792,7 +803,7 @@ if __name__ == "__main__":
     print(f"{'='*60}")
     
     try:
-        classifier = MedicalArticleClassifier()  # Default is now Claude Sonnet 4.5
+        classifier = MedicalArticleClassifier()  # Defaults to the configured Claude model
         
         # Test filtering step
         print(f"\n=== Testing Claude Filtering Step ===")

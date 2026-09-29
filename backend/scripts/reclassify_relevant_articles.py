@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reclassify and re-score relevant articles with complete abstracts using Claude Sonnet 4.5."""
+"""Reclassify and re-score relevant articles with complete abstracts using the configured Claude model."""
 
 import sys
 import os
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from medical_processing.classification.classifier import MedicalArticleClassifier
 from medical_processing.database.operations import ArticleDatabase, get_connection
-from medical_processing.config import DATABASE_PATH
+from medical_processing.config import DATABASE_PATH, CLAUDE_MODEL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def get_relevant_articles_with_data():
         conn.close()
 
 def reclassify_articles(articles, model_provider="claude"):
-    """Reclassify articles using Claude Sonnet 4.5."""
+    """Reclassify articles using the configured Claude model."""
     classifier = MedicalArticleClassifier(model_provider=model_provider)
     
     reclassified = []
@@ -253,7 +253,7 @@ def main():
     print()
     
     # Confirm
-    confirm = input(f"Reclassify {len(articles)} articles using Claude Sonnet 4.5? This will make {len(articles) * 2} API calls. (yes/no): ")
+    confirm = input(f"Reclassify {len(articles)} articles using {CLAUDE_MODEL}? This will make {len(articles) * 2} API calls. (yes/no): ")
     if confirm.lower() != "yes":
         print("Cancelled.")
         return

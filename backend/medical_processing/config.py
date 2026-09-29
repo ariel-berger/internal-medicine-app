@@ -3,6 +3,12 @@
 # Database configuration
 DATABASE_PATH = "medical_articles.db"
 
+# Classification model configuration
+# Anthropic has no "latest" alias - model IDs must be pinned explicitly, so these
+# constants are the single place to change when upgrading.
+CLAUDE_MODEL = "claude-sonnet-5-5"
+GEMINI_MODEL = "gemini-2.5-pro"
+
 # Journal configuration - using PubMed abbreviated names
 JOURNALS = {
     "NEJM": "N Engl J Med",

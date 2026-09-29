@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import logging
 from .schema import get_connection
+from medical_processing.config import CLAUDE_MODEL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -345,7 +346,7 @@ class ArticleDatabase:
                 classification_data.get('scores_penalty_points', 0),
                 classification_data.get('subanalysis_penalty_points', 0),
                 classification_data.get('prognosis_penalty_points', 0),
-                "claude-sonnet-4.5-20250929",
+                classification_data.get('classifier_version', CLAUDE_MODEL),
                 ranking_breakdown.get('temporality_points', 0)
             ))
                 

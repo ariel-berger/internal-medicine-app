@@ -18,6 +18,7 @@ from medical_processing.data_collection.pubmed_client import PubMedClient
 from medical_processing.classification.classifier import classify_articles_batch
 from medical_processing.database.operations import batch_insert_articles
 from medical_processing.database.schema import create_database, migrate_database
+from medical_processing.config import CLAUDE_MODEL, GEMINI_MODEL
 from config import JOURNALS
 
 # Configure logging
@@ -144,7 +145,7 @@ def main():
     
     try:
         # Use specified AI model for classification
-        model_name = "Claude Sonnet 4.5" if args.model == "claude" else "Gemini 2.5 Pro"
+        model_name = CLAUDE_MODEL if args.model == "claude" else GEMINI_MODEL
         logger.info(f"Starting classification with {model_name}...")
         classified_articles = classify_articles_batch(articles, model_provider=args.model)
         
