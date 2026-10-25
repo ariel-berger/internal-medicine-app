@@ -208,6 +208,23 @@ class LocalAPIClient {
     return this.post(`/medical-articles/${articleId}/track-click`, { type });
   }
 
+  // Article discussion methods
+  async getArticleComments(articleId) {
+    return this.get(`/medical-articles/${articleId}/comments`);
+  }
+
+  async addArticleComment(articleId, content) {
+    return this.post(`/medical-articles/${articleId}/comments`, { content });
+  }
+
+  async deleteArticleComment(commentId) {
+    return this.delete(`/article-comments/${commentId}`);
+  }
+
+  async getArticleCommentCounts() {
+    return this.get('/article-comments/counts');
+  }
+
   // Admin methods
   async getAdminSystemStats() {
     return this.get('/admin/system-stats');

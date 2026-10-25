@@ -1,5 +1,10 @@
 import { localClient } from './localClient';
 
+// Comment counts for all articles, fetched once and shared by every card on the page
+const COMMENT_COUNTS_TTL_MS = 60 * 1000;
+let commentCountsPromise = null;
+let commentCountsFetchedAt = 0;
+
 export class MedicalArticle {
   constructor(data) {
     Object.assign(this, data);
@@ -23,6 +28,38 @@ export class MedicalArticle {
       console.error('Error setting hidden from dashboard flag:', error);
       throw error;
     }
+  }
+
+  static async getComments(articleId) {
+    return localClient.getArticleComments(articleId);
+  }
+
+  static async addComment(articleId, content) {
+    const comment = await localClient.addArticleComment(articleId, content);
+    MedicalArticle.invalidateCommentCounts();
+    return comment;
+  }
+
+  static async deleteComment(commentId) {
+    const result = await localClient.deleteArticleComment(commentId);
+    MedicalArticle.invalidateCommentCounts();
+    return result;
+  }
+
+  static getCommentCounts() {
+    if (!commentCountsPromise || Date.now() - commentCountsFetchedAt > COMMENT_COUNTS_TTL_MS) {
+      commentCountsFetchedAt = Date.now();
+      commentCountsPromise = localClient.getArticleCommentCounts().catch((error) => {
+        console.error('Error fetching comment counts:', error);
+        commentCountsPromise = null;
+        return {};
+      });
+    }
+    return commentCountsPromise;
+  }
+
+  static invalidateCommentCounts() {
+    commentCountsPromise = null;
   }
 
   static async getRelevantArticles(params = {}) {

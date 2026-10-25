@@ -1279,7 +1279,106 @@ def delete_user_study_status(record_id):
         db.session.rollback()
         return jsonify({'error': f'Failed to delete status: {str(e)}'}), 500
 
-# Comments API removed per product decision
+# Article discussion comments
+MAX_ARTICLE_COMMENT_LENGTH = 5000
+
+def _article_comment_to_dict(comment, author_name, current_user):
+    """Serialize an article comment for the current viewer"""
+    return {
+        'id': comment.id,
+        'article_id': comment.article_id,
+        'user_id': comment.user_id,
+        'author_name': author_name or comment.created_by,
+        'content': comment.content,
+        # Stored in UTC; mark it so browsers convert to local time
+        'created_date': comment.created_date.isoformat() + 'Z' if comment.created_date else None,
+        'can_delete': comment.user_id == current_user.id or current_user.role == 'admin',
+    }
+
+@app.route('/api/medical-articles/<int:article_id>/comments', methods=['GET'])
+@jwt_required()
+def get_article_comments(article_id: int):
+    """Get all comments on a medical article, oldest first"""
+    current_user = User.query.get(int(get_jwt_identity()))
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
+    try:
+        rows = (
+            db.session.query(ArticleComment, User.full_name)
+            .outerjoin(User, User.id == ArticleComment.user_id)
+            .filter(ArticleComment.article_id == article_id)
+            .order_by(ArticleComment.created_date.asc(), ArticleComment.id.asc())
+            .all()
+        )
+        return jsonify([_article_comment_to_dict(c, name, current_user) for c, name in rows])
+    except Exception as e:
+        return jsonify({'error': f'Failed to get comments: {str(e)}'}), 500
+
+@app.route('/api/medical-articles/<int:article_id>/comments', methods=['POST'])
+@jwt_required()
+def create_article_comment(article_id: int):
+    """Add a comment to a medical article"""
+    current_user = User.query.get(int(get_jwt_identity()))
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json() or {}
+    content = (data.get('content') or '').strip()
+    if not content:
+        return jsonify({'error': 'Comment cannot be empty'}), 400
+    if len(content) > MAX_ARTICLE_COMMENT_LENGTH:
+        return jsonify({'error': f'Comment is too long (max {MAX_ARTICLE_COMMENT_LENGTH} characters)'}), 400
+
+    try:
+        comment = ArticleComment(
+            article_id=article_id,
+            user_id=current_user.id,
+            content=content,
+            created_by=current_user.email,
+            created_date=datetime.utcnow(),
+        )
+        db.session.add(comment)
+        db.session.commit()
+        return jsonify(_article_comment_to_dict(comment, current_user.full_name, current_user)), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to add comment: {str(e)}'}), 500
+
+@app.route('/api/article-comments/<int:comment_id>', methods=['DELETE'])
+@jwt_required()
+def delete_article_comment(comment_id: int):
+    """Delete a comment: its author or an admin"""
+    current_user = User.query.get(int(get_jwt_identity()))
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
+
+    comment: Optional[ArticleComment] = ArticleComment.query.get(comment_id)
+    if not comment:
+        return jsonify({'error': 'Comment not found'}), 404
+    if comment.user_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'error': 'You can only delete your own comments'}), 403
+
+    try:
+        db.session.delete(comment)
+        db.session.commit()
+        return jsonify({'message': 'Deleted'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete comment: {str(e)}'}), 500
+
+@app.route('/api/article-comments/counts', methods=['GET'])
+@jwt_required()
+def get_article_comment_counts():
+    """Number of comments per article, as {article_id: count}"""
+    try:
+        rows = (
+            db.session.query(ArticleComment.article_id, db.func.count(ArticleComment.id))
+            .group_by(ArticleComment.article_id)
+            .all()
+        )
+        return jsonify({str(article_id): count for article_id, count in rows})
+    except Exception as e:
+        return jsonify({'error': f'Failed to get comment counts: {str(e)}'}), 500
 
 @app.route('/api/users', methods=['GET'])
 @jwt_required()

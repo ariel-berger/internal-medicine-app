@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { MedicalArticle as MedicalArticleAPI } from '@/api/medicalArticles';
 import { localClient } from '@/api/localClient';
 import { User as UserEntity } from '@/api/entities';
-// Discussion feature removed
+import ArticleDiscussion from './ArticleDiscussion';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatAbstract } from '@/utils/formatAbstract.jsx';
 
@@ -95,6 +95,17 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUpdatingImportance, setIsUpdatingImportance] = useState(false);
   const [isUpdatingHidden, setIsUpdatingHidden] = useState(false);
+  const [isDiscussionOpen, setIsDiscussionOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
+
+  useEffect(() => {
+    if (!article?.id) return;
+    let cancelled = false;
+    MedicalArticleAPI.getCommentCounts().then((counts) => {
+      if (!cancelled) setCommentCount(counts[String(article.id)] || 0);
+    });
+    return () => { cancelled = true; };
+  }, [article?.id]);
 
   const handleTrackClick = (type) => {
     if (article.id) {
@@ -410,8 +421,22 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
               )}
             </div>
             
-            {/* Discussion removed */}
+            <Button
+              variant="ghost"
+              onClick={() => setIsDiscussionOpen(!isDiscussionOpen)}
+              className={`flex items-center gap-2 px-2 ${isDiscussionOpen ? 'text-blue-700 bg-blue-50' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Discuss</span>
+              {commentCount > 0 && (
+                <Badge variant="secondary" className="px-1.5">{commentCount}</Badge>
+              )}
+            </Button>
           </div>
+
+          {isDiscussionOpen && (
+            <ArticleDiscussion articleId={article.id} onCountChange={setCommentCount} />
+          )}
         </div>
       </CardContent>
     </Card>
