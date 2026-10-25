@@ -59,7 +59,7 @@ const navigationItems = [
     icon: Plus,
   },
   {
-    title: "About",
+    title: "About and Contact",
     url: createPageUrl("About"),
     icon: Info,
   },
