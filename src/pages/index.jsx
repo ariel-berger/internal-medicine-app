@@ -7,6 +7,7 @@ import MyLibrary from "./MyLibrary";
 import DataManagement from "./DataManagement";
 import AllStudies from "./AllStudies";
 import CaseReports from "./CaseReports";
+import About from "./About";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -25,7 +26,9 @@ const PAGES = {
     AllStudies: AllStudies,
     
     CaseReports: CaseReports,
-    
+
+    About: About,
+
 }
 
 function _getCurrentPage(url) {
@@ -61,6 +64,7 @@ function PagesContent() {
                             <Route path="/DataManagement" element={<DataManagement />} />
                             <Route path="/AllStudies" element={<AllStudies />} />
                             <Route path="/CaseReports" element={<CaseReports />} />
+                            <Route path="/About" element={<About />} />
                         </Routes>
                     </Layout>
                 </ProtectedRoute>

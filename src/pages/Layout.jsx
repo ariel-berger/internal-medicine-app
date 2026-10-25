@@ -3,7 +3,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText } from "lucide-react";
+import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import {
   Sidebar,
@@ -57,6 +57,11 @@ const navigationItems = [
     title: "Add Study",
     url: createPageUrl("AddStudy"),
     icon: Plus,
+  },
+  {
+    title: "About",
+    url: createPageUrl("About"),
+    icon: Info,
   },
 ];
 

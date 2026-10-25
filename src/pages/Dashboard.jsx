@@ -597,6 +597,18 @@ export default function Dashboard() {
   }, [articleStatuses, userStatuses]);
 
   return (
+    <div className="space-y-6">
+    <section className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-center">
+      <p className="mx-auto max-w-3xl text-sm md:text-base text-slate-700">
+        Built for the busy hospitalist, the Internal Nerds dashboard helps you catch up on the latest and most relevant internal medicine articles from the past two weeks.
+      </p>
+      <p className="mt-1 text-xs md:text-sm text-slate-500">
+        Further reading and contact details for feedback are on the{" "}
+        <Link to={createPageUrl("About")} className="font-medium text-blue-700 hover:underline underline-offset-4">
+          About page
+        </Link>.
+      </p>
+    </section>
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
       <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
         <TopStudies studies={topThreeStudies} isLoading={isLoading} />
@@ -669,6 +681,7 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
