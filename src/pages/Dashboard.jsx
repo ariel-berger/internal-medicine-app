@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { BookOpen, Search, ArrowRight, TrendingUp } from "lucide-react";
+import { BookOpen, Search, ArrowRight, TrendingUp, Stethoscope } from "lucide-react";
 
 import StudyGrid from "../components/dashboard/StudyGrid";
 import MedicalArticleGrid from "../components/dashboard/MedicalArticleGrid";
@@ -598,15 +598,19 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-    <section className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-center">
-      <p className="mx-auto max-w-3xl text-sm md:text-base text-slate-700">
+    <section className="rounded-xl border border-blue-200/70 bg-gradient-to-r from-blue-100/80 via-white to-indigo-100/80 px-4 py-4 text-center shadow-sm">
+      <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-blue-100">
+        <Stethoscope className="h-4 w-4 text-blue-700" />
+      </div>
+      <p className="mx-auto max-w-3xl text-sm md:text-base font-medium text-slate-800">
         Built for the busy hospitalist, the Internal Nerds dashboard helps you catch up on the latest and most relevant internal medicine articles from the past two weeks.
       </p>
       <p className="mt-1 text-xs md:text-sm text-slate-500">
         Further reading and contact details for feedback are on the{" "}
-        <Link to={createPageUrl("About")} className="font-medium text-blue-700 hover:underline underline-offset-4">
+        <Link to={createPageUrl("About")} className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline underline-offset-4">
           About page
-        </Link>.
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </p>
     </section>
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
