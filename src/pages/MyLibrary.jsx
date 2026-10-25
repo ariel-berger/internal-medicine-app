@@ -21,6 +21,7 @@ export default function MyLibrary() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [personalStats, setPersonalStats] = useState({ readThisMonth: 0, topSpecialty: '' });
+  const [activeTab, setActiveTab] = useState(null);
 
   useEffect(() => {
     loadLibraryData();
@@ -290,6 +291,44 @@ export default function MyLibrary() {
     return [want, readA];
   }, [articles, articleStatuses, searchTerm]);
 
+  const wantCount = wantToReadArticles.length + wantToReadStudies.length;
+  const readCount = readArticles.length + readStudies.length;
+  // Until the user picks a tab, open Want to Read unless it's empty and Read isn't
+  const currentTab = activeTab ?? (wantCount > 0 || readCount === 0 ? 'want_to_read' : 'read');
+
+  const renderShelf = (shelfArticles, shelfStudies, emptyText) => {
+    if (!isLoading && shelfArticles.length === 0 && shelfStudies.length === 0) {
+      return (
+        <div className="professional-card p-8 text-center text-slate-600">
+          {searchTerm ? 'Nothing here matches your search.' : emptyText}
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-6">
+        {(isLoading || shelfArticles.length > 0) && (
+          <MedicalArticleGrid
+            articles={shelfArticles}
+            isLoading={isLoading}
+            statusMap={articleStatuses}
+            onStatusChange={handleArticleStatusChange}
+            commentCounts={{}}
+          />
+        )}
+        {shelfStudies.length > 0 && (
+          <StudyGrid
+            studies={shelfStudies}
+            isLoading={isLoading}
+            users={{}}
+            statusMap={statuses}
+            onStatusChange={handleStatusChange}
+            onStudyUpdate={handleStudyUpdate}
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 md:p-8 min-h-screen">
       <div className="max-w-7xl mx-auto">
@@ -324,71 +363,26 @@ export default function MyLibrary() {
           />
         </div>
 
-        {wantToReadStudies.length > 0 || readStudies.length > 0 ? (
-          <Tabs defaultValue={wantToReadStudies.length > 0 ? "want_to_read" : "read"} className="w-full">
+        <Tabs value={currentTab} onValueChange={setActiveTab} className="w-full">
+          <div className="sticky top-0 z-10 -mx-1 bg-slate-50/95 px-1 py-2 backdrop-blur-sm">
             <TabsList className="grid w-full grid-cols-2 md:w-96">
               <TabsTrigger value="want_to_read" className="flex items-center gap-2">
                 <Bookmark className="w-4 h-4 text-slate-600" />
-                Want to Read ({wantToReadStudies.length})
+                Want to Read ({wantCount})
               </TabsTrigger>
               <TabsTrigger value="read" className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />
-                Read ({readStudies.length})
+                Read ({readCount})
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="want_to_read" className="mt-6">
-              {wantToReadStudies.length > 0 ? (
-                <StudyGrid 
-                  studies={wantToReadStudies} 
-                  isLoading={isLoading} 
-                  users={{}}
-                  statusMap={statuses}
-                  onStatusChange={handleStatusChange}
-                  onStudyUpdate={handleStudyUpdate}
-                />
-              ) : null}
-            </TabsContent>
-            <TabsContent value="read" className="mt-6">
-              {readStudies.length > 0 ? (
-                <StudyGrid 
-                  studies={readStudies} 
-                  isLoading={isLoading} 
-                  users={{}}
-                  statusMap={statuses}
-                  onStatusChange={handleStatusChange}
-                  onStudyUpdate={handleStudyUpdate}
-                />
-              ) : null}
-            </TabsContent>
-          </Tabs>
-        ) : null}
-
-        {/* Saved Medical Articles */}
-        <div className="mt-12 space-y-6">
-          <h2 className="text-2xl font-semibold text-slate-900">Saved Medical Articles</h2>
-          <div className="space-y-10">
-            <div>
-              <h3 className="text-lg font-medium text-slate-800 mb-3">Want to Read ({wantToReadArticles.length})</h3>
-              <MedicalArticleGrid
-                articles={wantToReadArticles}
-                isLoading={isLoading}
-                statusMap={articleStatuses}
-                onStatusChange={handleArticleStatusChange}
-                commentCounts={{}}
-              />
-            </div>
-            <div>
-              <h3 className="text-lg font-medium text-slate-800 mb-3">Read ({readArticles.length})</h3>
-              <MedicalArticleGrid
-                articles={readArticles}
-                isLoading={isLoading}
-                statusMap={articleStatuses}
-                onStatusChange={handleArticleStatusChange}
-                commentCounts={{}}
-              />
-            </div>
           </div>
-        </div>
+          <TabsContent value="want_to_read" className="mt-4">
+            {renderShelf(wantToReadArticles, wantToReadStudies, 'Articles you mark as Want to Read will appear here.')}
+          </TabsContent>
+          <TabsContent value="read" className="mt-4">
+            {renderShelf(readArticles, readStudies, 'Articles you mark as Read will appear here.')}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
