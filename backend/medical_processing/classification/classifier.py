@@ -199,7 +199,7 @@ Journal: {journal_display}
 {{
     "participants": "number | null",
     "medical_category": "string ({categories_list})",
-    "clinical_bottom_line": "string (A 1-2 sentence summary for a busy clinician.)",
+    "clinical_bottom_line": "string (A 2-3 sentence summary for a busy clinician, with a few-word drug class for any drug being studied.)",
     "tags": ["string"],
     "ranking_score": "number (0-11)",
     "ranking_breakdown": {{
@@ -285,6 +285,7 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
 
 **Step 3: Summary and Tagging**
 * clinical_bottom_line: Write a 2-3 sentence, evidence-based summary for a busy doctor. Base this ONLY on conclusions explicitly stated in the abstract. Include: (1) Study design and key participant characteristics, (2) Main outcome measured, (3) Key findings/conclusions from the abstract. Do NOT extrapolate, infer, or add clinical recommendations not explicitly stated in the abstract. If important inclusion/exclusion criteria are mentioned, include them briefly.
+  Drug class (the ONLY exception to the abstract-only rule): when the study tests a drug, add ONE short drug class name in parentheses right after the drug is first named, even if the abstract does not mention it. Use the common class name only, 1-3 words, with no extra mechanism detail, e.g. "furosemide (a loop diuretic)", "apixaban (a factor Xa inhibitor)", "empagliflozin (an SGLT2 inhibitor)". Apply this only to the drug(s) being studied and any active comparator, not to placebo, background therapy, or other drugs merely mentioned. Use only well-established pharmacology; if you are not sure of an investigational drug's class, leave it out. Skip it entirely for non-drug interventions.
 * tags: Generate an array of relevant tags. Include "practice-changing", "guideline", or "popular-article" if applicable based on your analysis.
 * participants: Analyze the provided abstract and other text to find the number of participants in the study. If this information is not mentioned in the text, use null.
 
@@ -292,7 +293,7 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
 {{
     "participants": 1250,
     "medical_category": "Cardiology",
-    "clinical_bottom_line": "This randomized controlled trial of 1,250 patients with acute coronary syndrome compared early statin initiation (within 24 hours) versus delayed initiation (after 7 days). The primary outcome was 30-day mortality, which was 8.2% in the early group versus 10.9% in the delayed group (p=0.03). The study concluded that early statin therapy significantly reduced 30-day mortality in ACS patients.",
+    "clinical_bottom_line": "This randomized controlled trial of 1,250 patients with acute coronary syndrome compared early initiation of atorvastatin (a statin) within 24 hours versus delayed initiation after 7 days. The primary outcome was 30-day mortality, which was 8.2% in the early group versus 10.9% in the delayed group (p=0.03). The study concluded that early statin therapy significantly reduced 30-day mortality in ACS patients.",
     "tags": ["practice-changing", "cardiology", "statins", "acute-coronary-syndrome"],
     "ranking_score": 8,
     "ranking_breakdown": {{
