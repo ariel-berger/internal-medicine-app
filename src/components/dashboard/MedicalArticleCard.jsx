@@ -15,6 +15,7 @@ import { User as UserEntity } from '@/api/entities';
 import ArticleDiscussion from './ArticleDiscussion';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatAbstract } from '@/utils/formatAbstract.jsx';
+import { isMajorJournal } from '@/utils/majorJournals';
 
 const specialtyColors = {
   Cardiology: "bg-red-100 text-red-700 border-red-200",
@@ -156,7 +157,7 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
 
   const isMajor = typeof article?.isMajorJournal === 'function'
     ? article.isMajorJournal()
-    : (typeof article?.ranking_score === 'number' && article.ranking_score >= 8);
+    : isMajorJournal(article?.journal);
   const specialty = typeof article?.getSpecialty === 'function'
     ? article.getSpecialty()
     : (article?.medical_category ? article.medical_category.replace(/_/g, ' ') : null);

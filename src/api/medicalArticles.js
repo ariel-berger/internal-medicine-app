@@ -1,4 +1,5 @@
 import { localClient } from './localClient';
+import { isMajorJournal } from '@/utils/majorJournals';
 
 // Comment counts for all articles, fetched once and shared by every card on the page
 const COMMENT_COUNTS_TTL_MS = 60 * 1000;
@@ -144,7 +145,7 @@ export class MedicalArticle {
 
   // Helper method to determine if this is a major journal based on ranking score
   isMajorJournal() {
-    return this.ranking_score >= 8; // Adjust threshold as needed
+    return isMajorJournal(this.journal);
   }
 
   // Helper method to get specialty from medical category

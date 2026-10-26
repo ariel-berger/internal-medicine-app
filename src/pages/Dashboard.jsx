@@ -15,6 +15,7 @@ import { BookOpen, Search, ArrowRight, TrendingUp, Stethoscope } from "lucide-re
 import StudyGrid from "../components/dashboard/StudyGrid";
 import MedicalArticleGrid from "../components/dashboard/MedicalArticleGrid";
 import TopStudies from "../components/dashboard/TopStudies";
+import { isMajorJournal } from "@/utils/majorJournals";
 
 export default function Dashboard() {
   const [studies, setStudies] = useState([]);
@@ -509,7 +510,7 @@ export default function Dashboard() {
           // Map article fields to study fields for compatibility
           specialties: article.medical_category ? [article.medical_category] : [],
           is_important_to_read: article.is_key_study === true,
-          is_major_journal: article.ranking_score >= 8, // Use ranking score directly instead of method
+          is_major_journal: isMajorJournal(article.journal),
           impact_factor: article.ranking_score, // Use ranking score as impact factor
           study_type: article.article_type || 'Journal Article',
           key_findings: article.clinical_bottom_line,
