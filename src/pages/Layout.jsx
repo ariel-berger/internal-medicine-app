@@ -4,7 +4,7 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info } from "lucide-react";
-import logoImage from "@/assets/logo.png";
+import logoImage from "@/assets/logo.svg";
 import {
   Sidebar,
   SidebarContent,
@@ -142,8 +142,8 @@ export default function Layout({ children, currentPageName }) {
       </style>
       <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
         <Sidebar className="border-r border-slate-200 bg-white w-60">
-          <SidebarHeader className="border-b border-slate-200 p-4 flex items-center gap-3">
-             <img src={logoImage} alt="Internal Nerds Logo" className="w-20 h-20 rounded-lg object-contain" />
+          <SidebarHeader className="border-b border-slate-200 p-4 flex flex-row items-center gap-3">
+             <img src={logoImage} alt="" className="w-10 h-10 flex-shrink-0" />
               <div>
                  <h1 className="text-lg font-bold text-slate-800">Internal Nerds</h1>
               </div>
