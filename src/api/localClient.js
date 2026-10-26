@@ -242,6 +242,47 @@ class LocalAPIClient {
   async addSingleArticle(url) {
     return this.post('/admin/articles/add-single', { url });
   }
+
+  // Weekly email methods
+  async getEmailPreferences() {
+    return this.get('/email-preferences');
+  }
+
+  async updateEmailPreferences(weeklyDigest) {
+    return this.put('/email-preferences', { weekly_digest: !!weeklyDigest });
+  }
+
+  async getUnsubscribeInfo(token) {
+    return this.get(`/email/unsubscribe?token=${encodeURIComponent(token)}`);
+  }
+
+  async setSubscriptionWithToken(token, subscribe) {
+    return this.post('/email/unsubscribe', { token, subscribe: !!subscribe });
+  }
+
+  async getWeeklyDigest() {
+    return this.get('/admin/weekly-digest');
+  }
+
+  async prepareWeeklyDigest() {
+    return this.post('/admin/weekly-digest/prepare', {});
+  }
+
+  async previewWeeklyDigest(digestId, articleIds) {
+    return this.post(`/admin/weekly-digest/${digestId}/preview`, { article_ids: articleIds });
+  }
+
+  async sendWeeklyDigestTest(digestId, articleIds) {
+    return this.post(`/admin/weekly-digest/${digestId}/test`, { article_ids: articleIds });
+  }
+
+  async sendWeeklyDigest(digestId, articleIds) {
+    return this.post(`/admin/weekly-digest/${digestId}/send`, { article_ids: articleIds });
+  }
+
+  async skipWeeklyDigest(digestId) {
+    return this.post(`/admin/weekly-digest/${digestId}/skip`, {});
+  }
 }
 
 // Create singleton instance

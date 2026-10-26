@@ -3,8 +3,11 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 import os
+import json
+import secrets
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Optional
@@ -15,6 +18,8 @@ import sys
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
+from utils.mailer import send_emails
+from utils.weekly_digest_email import build_digest_email, build_approval_email
 
 # Configure logging to show all logs in terminal
 logging.basicConfig(
@@ -277,6 +282,38 @@ class ArticleInteraction(db.Model):
     article_id = db.Column(db.Integer, nullable=False)
     interaction_type = db.Column(db.String(50), nullable=False) # 'pubmed_click', 'doi_click'
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class EmailPreference(db.Model):
+    # Users without a row get the weekly email (everyone is subscribed by default)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    weekly_digest = db.Column(db.Boolean, default=True, nullable=False)
+    unsubscribe_token = db.Column(db.String(64), unique=True, nullable=False)
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+
+class WeeklyDigest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    week_key = db.Column(db.String(10), unique=True, nullable=False)  # date of the Saturday scan it covers, e.g. '2026-10-24': one email per scan
+    status = db.Column(db.String(20), nullable=False, default='pending')  # pending, sending, sent, skipped, expired
+    created_at = db.Column(db.DateTime, nullable=False)  # UTC
+    articles_json = db.Column(db.Text)  # the articles that were sent: [{id, title, journal}]
+    decided_by = db.Column(db.String(120))
+    decided_at = db.Column(db.DateTime)
+    recipients_count = db.Column(db.Integer)
+    send_error = db.Column(db.Text)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'week_key': self.week_key,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'articles': json.loads(self.articles_json) if self.articles_json else [],
+            'decided_by': self.decided_by,
+            'decided_at': self.decided_at.isoformat() + 'Z' if self.decided_at else None,
+            'recipients_count': self.recipients_count,
+            'send_error': self.send_error,
+        }
 
 # Routes
 @app.route('/api/health', methods=['GET'])
@@ -1843,6 +1880,339 @@ def get_admin_system_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ---- Weekly "top 3" email ----
+
+APP_URL = vercel_frontend.rstrip('/')
+BACKEND_URL = os.getenv('BACKEND_URL', 'https://medicaldash-backend.onrender.com').rstrip('/')
+DIGEST_MAX_ARTICLES = 3
+BERLIN = pytz.timezone('Europe/Berlin')
+
+def _current_week_key():
+    """The Saturday scan the email belongs to: the most recent Saturday from 12:00 Berlin time, e.g. '2026-10-24'."""
+    shifted = datetime.now(BERLIN) - timedelta(hours=12)
+    return (shifted.date() - timedelta(days=(shifted.weekday() - 5) % 7)).isoformat()
+
+def _week_start_utc(week_key):
+    """This week's articles are those added since the start of the scan's Saturday (Berlin time)."""
+    saturday = BERLIN.localize(datetime.strptime(week_key, '%Y-%m-%d'))
+    return saturday.astimezone(pytz.utc).replace(tzinfo=None)
+
+def _get_email_preference(user_id):
+    pref = EmailPreference.query.filter_by(user_id=user_id).first()
+    if not pref:
+        pref = EmailPreference(user_id=user_id, weekly_digest=True, unsubscribe_token=secrets.token_urlsafe(24))
+        db.session.add(pref)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            pref = EmailPreference.query.filter_by(user_id=user_id).first()
+    return pref
+
+def _digest_recipient_users():
+    """Every user who hasn't unsubscribed from the weekly email."""
+    opted_out = {p.user_id for p in EmailPreference.query.filter_by(weekly_digest=False).all()}
+    return [u for u in User.query.order_by(User.id).all() if u.id not in opted_out]
+
+def _week_articles(since):
+    """Articles added since `since`, in dashboard order (key studies first, then by score).
+    Same filters as the dashboard: relevant, not hidden, no case reports."""
+    conn = get_medical_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT a.id, a.title, a.journal, a.article_type, a.publication_type,
+                   ec.ranking_score, a.pmid, a.url
+            FROM articles a
+            JOIN enhanced_classifications ec ON a.id = ec.article_id
+            WHERE ec.is_relevant = 1
+              AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)
+              AND a.created_at >= ?
+            ORDER BY ec.ranking_score DESC, a.publication_date DESC
+        """, (since.strftime('%Y-%m-%d %H:%M:%S'),))
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    ids = [row[0] for row in rows]
+    key_ids = {r.article_id for r in KeyArticle.query.filter(KeyArticle.article_id.in_(ids)).all()} if ids else set()
+    articles = []
+    for article_id, title, journal, article_type, publication_type, score, pmid, url in rows:
+        if 'case report' in (article_type or publication_type or '').lower():
+            continue
+        articles.append({
+            'id': article_id,
+            'title': title,
+            'journal': journal,
+            'ranking_score': score,
+            'is_key_study': article_id in key_ids,
+            'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
+        })
+    # Stable sort: keeps score order within key and non-key groups
+    articles.sort(key=lambda a: not a['is_key_study'])
+    return articles
+
+def _digest_week_articles(digest):
+    return _week_articles(_week_start_utc(digest.week_key))
+
+def _chosen_digest_articles(digest, article_ids):
+    """Validate the admin's chosen articles against this week's list. Returns (articles, error)."""
+    if not isinstance(article_ids, list) or not 1 <= len(article_ids) <= DIGEST_MAX_ARTICLES:
+        return None, f'Choose between 1 and {DIGEST_MAX_ARTICLES} articles.'
+    try:
+        ids = [int(i) for i in article_ids]
+    except (TypeError, ValueError):
+        return None, 'Invalid article list.'
+    week = {a['id']: a for a in _digest_week_articles(digest)}
+    if len(set(ids)) != len(ids) or any(i not in week for i in ids):
+        return None, "Some of the chosen articles aren't in this week's list anymore. Reload the page and try again."
+    return [week[i] for i in ids], None
+
+def _digest_email_for(user, articles):
+    pref = _get_email_preference(user.id)
+    email = build_digest_email(
+        articles,
+        recipient_email=user.email,
+        dashboard_url=f"{APP_URL}/Dashboard",
+        unsubscribe_url=f"{APP_URL}/unsubscribe?token={pref.unsubscribe_token}",
+    )
+    email['to'] = user.email
+    # Lets mail apps (Gmail, Apple Mail) show their own one-click "Unsubscribe" button
+    email['headers'] = {
+        'List-Unsubscribe': f"<{BACKEND_URL}/api/email/unsubscribe?token={pref.unsubscribe_token}>",
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    }
+    return email
+
+def prepare_weekly_digest(notify_admins=True):
+    """
+    Create this week's email as 'pending' and, if notify_admins, email the admins asking them to approve it.
+    Nothing reaches users until an admin approves on the Weekly Email page. Returns (digest or None, message).
+    """
+    now = datetime.utcnow()
+    week_key = _current_week_key()
+
+    digest = WeeklyDigest.query.filter_by(week_key=week_key).first()
+    if digest and digest.status in ('sent', 'sending'):
+        return digest, "This week's email has already been sent."
+    if digest and digest.status == 'pending' and now - digest.created_at < timedelta(hours=3):
+        # Prepared moments ago (each server worker runs the Saturday job)
+        return digest, "This week's email is already waiting for approval."
+
+    articles = _week_articles(_week_start_utc(week_key))
+    if not articles:
+        return None, "No new articles since Saturday's scan, so there's nothing to send."
+
+    if digest:
+        # Re-open a skipped email, or re-send the approval request for an older pending one
+        digest.status = 'pending'
+        digest.created_at = now
+        digest.decided_by = None
+        digest.decided_at = None
+        digest.send_error = None
+    else:
+        digest = WeeklyDigest(week_key=week_key, status='pending', created_at=now)
+        db.session.add(digest)
+    # Only the newest scan's email can be approved
+    WeeklyDigest.query.filter(WeeklyDigest.status == 'pending', WeeklyDigest.week_key != week_key)\
+        .update({'status': 'expired', 'decided_at': now}, synchronize_session=False)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return WeeklyDigest.query.filter_by(week_key=week_key).first(), "This week's email is already waiting for approval."
+
+    if notify_admins and ADMIN_EMAILS:
+        email = build_approval_email(
+            suggested=articles[:DIGEST_MAX_ARTICLES],
+            all_articles=articles,
+            recipients_count=len(_digest_recipient_users()),
+            review_url=f"{APP_URL}/WeeklyEmail",
+        )
+        send_emails([{**email, 'to': admin_email} for admin_email in sorted(ADMIN_EMAILS)])
+    return digest, None
+
+def _deliver_weekly_digest(digest_id, articles):
+    """Send the approved email to every subscriber (runs in a background thread)."""
+    with app.app_context():
+        task_logger = logging.getLogger(__name__)
+        digest = WeeklyDigest.query.get(digest_id)
+        try:
+            messages = [_digest_email_for(user, articles) for user in _digest_recipient_users()]
+            sent = send_emails(messages)
+        except Exception as e:
+            task_logger.error(f"Weekly email failed: {e}", exc_info=True)
+            sent, messages = 0, []
+        if sent:
+            digest.status = 'sent'
+            digest.recipients_count = sent
+            if sent < len(messages):
+                digest.send_error = f"Sent to {sent} of {len(messages)} users; the rest failed."
+        else:
+            # Nothing went out: let an admin try again
+            digest.status = 'pending'
+            digest.send_error = "Sending failed, so nothing was sent. Try again, or ask Ariel to check the email settings."
+        db.session.commit()
+        task_logger.info(f"Weekly email {digest.week_key}: sent to {sent} user(s)")
+
+def _current_admin():
+    user = User.query.get(int(get_jwt_identity()))
+    return user if user and user.role == 'admin' else None
+
+@app.route('/api/email-preferences', methods=['GET'])
+@jwt_required()
+def get_email_preferences():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    pref = EmailPreference.query.filter_by(user_id=user.id).first()
+    return jsonify({'email': user.email, 'weekly_digest': pref.weekly_digest if pref else True})
+
+@app.route('/api/email-preferences', methods=['PUT'])
+@jwt_required()
+def update_email_preferences():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    data = request.get_json() or {}
+    pref = _get_email_preference(user.id)
+    pref.weekly_digest = bool(data.get('weekly_digest'))
+    db.session.commit()
+    return jsonify({'email': user.email, 'weekly_digest': pref.weekly_digest})
+
+def _preference_from_token():
+    token = request.args.get('token') or (request.get_json(silent=True) or {}).get('token')
+    return EmailPreference.query.filter_by(unsubscribe_token=token).first() if token else None
+
+@app.route('/api/email/unsubscribe', methods=['GET'])
+def get_unsubscribe_info():
+    """For the unsubscribe page: whose link this is and whether they're subscribed. No login needed."""
+    pref = _preference_from_token()
+    if not pref:
+        return jsonify({'error': 'This link is no longer valid.'}), 404
+    user = User.query.get(pref.user_id)
+    return jsonify({'email': user.email if user else None, 'weekly_digest': pref.weekly_digest})
+
+@app.route('/api/email/unsubscribe', methods=['POST'])
+def unsubscribe_with_token():
+    """Turn the weekly email off ({"subscribe": true} turns it back on). Also serves mail apps' one-click unsubscribe."""
+    pref = _preference_from_token()
+    if not pref:
+        return jsonify({'error': 'This link is no longer valid.'}), 404
+    data = request.get_json(silent=True) or {}
+    pref.weekly_digest = bool(data.get('subscribe', False))
+    db.session.commit()
+    return jsonify({'weekly_digest': pref.weekly_digest})
+
+@app.route('/api/admin/weekly-digest', methods=['GET'])
+@jwt_required()
+def get_weekly_digest():
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    try:
+        digest = WeeklyDigest.query.filter(WeeklyDigest.status.in_(['pending', 'sending']))\
+            .order_by(WeeklyDigest.created_at.desc()).first()
+        articles = _digest_week_articles(digest) if digest else []
+        history = WeeklyDigest.query.filter(WeeklyDigest.status.in_(['sent', 'skipped', 'expired']))\
+            .order_by(WeeklyDigest.created_at.desc()).limit(8).all()
+        this_week = WeeklyDigest.query.filter_by(week_key=_current_week_key()).first()
+        return jsonify({
+            'digest': digest.to_dict() if digest else None,
+            'this_week': this_week.to_dict() if this_week else None,
+            'articles': articles,
+            'suggested_ids': [a['id'] for a in articles[:DIGEST_MAX_ARTICLES]],
+            'max_articles': DIGEST_MAX_ARTICLES,
+            'recipients_count': len(_digest_recipient_users()),
+            'history': [d.to_dict() for d in history],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/weekly-digest/prepare', methods=['POST'])
+@jwt_required()
+def prepare_weekly_digest_now():
+    """Prepare this week's email by hand (e.g. if the Saturday job didn't run). Doesn't email the admins."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    digest, message = prepare_weekly_digest(notify_admins=False)
+    if not digest or digest.status != 'pending':
+        return jsonify({'error': message}), 409
+    return jsonify({'digest': digest.to_dict(), 'message': message})
+
+@app.route('/api/admin/weekly-digest/<int:digest_id>/preview', methods=['POST'])
+@jwt_required()
+def preview_weekly_digest(digest_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    digest = WeeklyDigest.query.get_or_404(digest_id)
+    articles, error = _chosen_digest_articles(digest, (request.get_json() or {}).get('article_ids'))
+    if error:
+        return jsonify({'error': error}), 400
+    email = build_digest_email(articles, admin.email, f"{APP_URL}/Dashboard", '#')
+    return jsonify({'subject': email['subject'], 'html': email['html']})
+
+@app.route('/api/admin/weekly-digest/<int:digest_id>/test', methods=['POST'])
+@jwt_required()
+def send_weekly_digest_test(digest_id):
+    """Send the email, exactly as users will get it, to the admin who clicked."""
+    admin = _current_admin()
+    if not admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    digest = WeeklyDigest.query.get_or_404(digest_id)
+    articles, error = _chosen_digest_articles(digest, (request.get_json() or {}).get('article_ids'))
+    if error:
+        return jsonify({'error': error}), 400
+    email = _digest_email_for(admin, articles)
+    email['subject'] = f"[Test] {email['subject']}"
+    if not send_emails([email]):
+        return jsonify({'error': "Couldn't send the test email. Ask Ariel to check the email settings."}), 500
+    return jsonify({'sent_to': admin.email})
+
+@app.route('/api/admin/weekly-digest/<int:digest_id>/send', methods=['POST'])
+@jwt_required()
+def send_weekly_digest(digest_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    digest = WeeklyDigest.query.get_or_404(digest_id)
+    if digest.status != 'pending':
+        return jsonify({'error': f'This email was already {digest.status}.'}), 409
+    articles, error = _chosen_digest_articles(digest, (request.get_json() or {}).get('article_ids'))
+    if error:
+        return jsonify({'error': error}), 400
+
+    # Claim it in one step so a double click or a second admin can't send it twice
+    claimed = WeeklyDigest.query.filter_by(id=digest_id, status='pending').update({
+        'status': 'sending',
+        'decided_by': admin.email,
+        'decided_at': datetime.utcnow(),
+        'articles_json': json.dumps([{'id': a['id'], 'title': a['title'], 'journal': a['journal']} for a in articles]),
+        'send_error': None,
+    }, synchronize_session=False)
+    db.session.commit()
+    if not claimed:
+        return jsonify({'error': 'This email is already being sent.'}), 409
+
+    threading.Thread(target=_deliver_weekly_digest, args=(digest_id, articles), daemon=True).start()
+    return jsonify({'status': 'sending', 'recipients_count': len(_digest_recipient_users())}), 202
+
+@app.route('/api/admin/weekly-digest/<int:digest_id>/skip', methods=['POST'])
+@jwt_required()
+def skip_weekly_digest(digest_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    skipped = WeeklyDigest.query.filter_by(id=digest_id, status='pending').update({
+        'status': 'skipped',
+        'decided_by': admin.email,
+        'decided_at': datetime.utcnow(),
+    }, synchronize_session=False)
+    db.session.commit()
+    if not skipped:
+        return jsonify({'error': 'This email is no longer waiting for approval.'}), 409
+    return jsonify({'status': 'skipped'})
+
 # Ensure database tables exist at import time for production servers (gunicorn)
 try:
     with app.app_context():
@@ -1959,6 +2329,14 @@ def scheduled_fetch_articles():
                     task_logger.error(f"Failed to send summary emails: {email_error}", exc_info=True)
             else:
                 task_logger.warning("No admin emails configured. Skipping email notification.")
+
+            # Prepare the weekly "top 3" email; it waits for an admin to approve it
+            try:
+                with app.app_context():
+                    _, message = prepare_weekly_digest()
+                task_logger.info(f"📬 Weekly email: {message or 'waiting for admin approval'}")
+            except Exception as digest_error:
+                task_logger.error(f"Failed to prepare weekly email: {digest_error}", exc_info=True)
         else:
             task_logger.error(f"Scheduled article fetch failed: {result.get('error', 'Unknown error')}")
             

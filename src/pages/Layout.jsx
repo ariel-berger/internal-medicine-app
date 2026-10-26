@@ -3,7 +3,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info } from "lucide-react";
+import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info, Mail } from "lucide-react";
 import logoImage from "@/assets/logo.svg";
 import {
   Sidebar,
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
+import EmailSettingsButton from "@/components/notifications/EmailSettingsButton";
 
 const SUPER_ADMIN_EMAIL = "medicortex-owner@berri.ai";
 
@@ -71,6 +72,12 @@ const adminNavItems = [
     url: createPageUrl("AdminDashboard"),
     icon: Crown,
     colorClass: "amber",
+  },
+  {
+    title: "Weekly Email",
+    url: createPageUrl("WeeklyEmail"),
+    icon: Mail,
+    colorClass: "blue",
   },
   {
     title: "Data Management",
@@ -221,7 +228,9 @@ export default function Layout({ children, currentPageName }) {
                  <h1 className="text-xl font-bold text-slate-900">{currentPageName}</h1>
               </div>
               
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 sm:gap-4">
+                {currentUser && <EmailSettingsButton />}
+
                 {currentPageName !== 'AddStudy' && (
                   <Link to={createPageUrl("AddStudy")}>
                     <Button className="bg-slate-800 text-white hover:bg-slate-900 transition-colors shadow-sm">
