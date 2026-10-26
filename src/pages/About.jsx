@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import MedicalArticleCard from "@/components/dashboard/MedicalArticleCard";
 import {
   Activity,
   BookOpen,
@@ -13,6 +14,7 @@ import {
   BarChart3,
   Mail,
   MessageCircle,
+  MousePointerClick,
 } from "lucide-react";
 
 // Mirrors JOURNALS in backend/medical_processing/config.py; update both together.
@@ -76,6 +78,46 @@ const PAGES = [
     text: "Add any article from PubMed by pasting its link or ID.",
   },
 ];
+
+// A real article, shown as a non-clickable example of a card.
+// No id, so the card doesn't load comments or track clicks.
+const EXAMPLE_ARTICLE = {
+  title: "A Conservative Dialysis Strategy and Kidney Function Recovery in Dialysis-Requiring Acute Kidney Injury: The Liberation From Acute Dialysis (LIBERATE-D) Randomized Clinical Trial.",
+  journal: "JAMA",
+  publication_date: "2025-11-07",
+  doi: "10.1001/jama.2025.21530",
+  url: "https://pubmed.ncbi.nlm.nih.gov/41201895/",
+  pmid: "41201895",
+  publication_type: "Journal Article",
+  participants: "220",
+  ranking_score: 9,
+  is_key_study: true,
+  medical_category: "Nephrology",
+  clinical_bottom_line: "This multicenter randomized trial of 220 patients with dialysis-requiring acute kidney injury compared a conservative dialysis strategy (dialysis only for specific indications) versus conventional dialysis (3 times weekly). The primary outcome was kidney function recovery at hospital discharge (alive, not on dialysis for ≥14 consecutive days). The conservative strategy resulted in higher recovery rates in unadjusted analysis (64% vs 50%, P=0.04), though the effect was not significant after prespecified adjustment (P=0.15), with fewer dialysis sessions and earlier recovery.",
+  tags: ["nephrology", "acute-kidney-injury", "dialysis", "kidney-replacement-therapy", "RCT"],
+  abstract: "Example abstract.",
+};
+
+// Shown when pointing at (or tapping) each part of the example card
+const CARD_EXPLANATIONS = {
+  score: { title: "Score", text: "The relevance score described above, from 0 to 11. Higher means more worth your time." },
+  keyStudy: { title: "Key Study", text: "A senior colleague marked it as a must-read. Key studies come first on the dashboard." },
+  majorJournal: { title: "Major Journal", text: "Published in a journal with an impact factor of 25 or more, such as NEJM, Lancet, or JAMA." },
+  specialty: { title: "Specialty", text: "The field the study belongs to." },
+  pubmed: { title: "PubMed", text: "Opens the article on PubMed." },
+  doi: { title: "DOI", text: "Opens the article on the journal's site." },
+  hide: { title: "Hide", text: "Folds the card away so you can skip it. Click Show to bring it back; it also returns when you reload the page." },
+  save: { title: "Save", text: "Add it to My Library as Want to Read, or mark it as Read." },
+  journal: { title: "Journal", text: "Where the article was published." },
+  participants: { title: "Participants", text: "Number of participants in the study." },
+  date: { title: "Publication date", text: "When the article was published." },
+  pmid: { title: "PMID", text: "The article's PubMed ID." },
+  bottomLine: { title: "Clinical Bottom Line", text: "An AI-written summary of the study design and main results." },
+  abstract: { title: "Show Abstract", text: "Opens the full abstract from PubMed." },
+  tags: { title: "Tags", text: "Topic keywords." },
+  status: { title: "Reading status", text: "What you chose with the Save button: Want to Read or Read." },
+  discuss: { title: "Discuss", text: "Read and write comments with colleagues. A number next to it shows how many comments there are." },
+};
 
 function SectionTitle({ children }) {
   return <h2 className="text-xl font-bold text-slate-900 mb-4">{children}</h2>;
@@ -149,6 +191,29 @@ export default function About() {
             </Link>
           ))}
         </div>
+      </section>
+
+      <section>
+        <SectionTitle>Reading an article card</SectionTitle>
+        <p className="text-slate-600 leading-relaxed mb-4">
+          Every article in the app is shown on a card like this one.
+        </p>
+        <p className="flex items-center gap-2 text-sm font-medium text-blue-700 mb-2">
+          <MousePointerClick className="w-4 h-4 shrink-0" />
+          Point at any part of the example to see what it does, or tap it on a phone.
+        </p>
+        <div className="select-none">
+          <MedicalArticleCard
+            article={EXAMPLE_ARTICLE}
+            statusRecord={{ status: "want_to_read" }}
+            onStatusChange={() => {}}
+            explanations={CARD_EXPLANATIONS}
+          />
+        </div>
+        <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+          Senior colleagues and admins also see a star button, to mark a Key Study, and a minus button, to hide
+          an article from everyone's dashboard.
+        </p>
       </section>
 
       <section>
