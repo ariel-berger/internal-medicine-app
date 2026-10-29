@@ -312,32 +312,34 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
                   >
                     <Star className={`w-4 h-4 transition-all ${article.is_key_study ? 'text-amber-400 fill-amber-400' : ''}`} />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={async () => {
-                      if (isUpdatingHidden) return;
-                      setIsUpdatingHidden(true);
-                      try {
-                        const next = !article.hidden_from_dashboard;
-                        await MedicalArticleAPI.setHiddenFromDashboard(article.id, next);
-                        onArticleUpdate && onArticleUpdate({ ...article, hidden_from_dashboard: next });
-                      } catch (e) {
-                        console.error('Failed to toggle hidden from dashboard', e);
-                      } finally {
-                        setIsUpdatingHidden(false);
-                      }
-                    }}
-                    disabled={isUpdatingHidden}
-                    className="text-slate-500 hover:text-red-500"
-                    title={article.hidden_from_dashboard ? 'Show on Dashboard' : 'Hide from Dashboard'}
-                  >
-                    {article.hidden_from_dashboard ? (
-                      <PlusCircle className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <MinusCircle className="w-4 h-4 text-red-500" />
-                    )}
-                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        if (isUpdatingHidden) return;
+                        setIsUpdatingHidden(true);
+                        try {
+                          const next = !article.hidden_from_dashboard;
+                          await MedicalArticleAPI.setHiddenFromDashboard(article.id, next);
+                          onArticleUpdate && onArticleUpdate({ ...article, hidden_from_dashboard: next });
+                        } catch (e) {
+                          console.error('Failed to toggle hidden from dashboard', e);
+                        } finally {
+                          setIsUpdatingHidden(false);
+                        }
+                      }}
+                      disabled={isUpdatingHidden}
+                      className="text-slate-500 hover:text-red-500"
+                      title={article.hidden_from_dashboard ? 'Show on Dashboard' : 'Hide from Dashboard'}
+                    >
+                      {article.hidden_from_dashboard ? (
+                        <PlusCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <MinusCircle className="w-4 h-4 text-red-500" />
+                      )}
+                    </Button>
+                  )}
                 </>
               )}
               

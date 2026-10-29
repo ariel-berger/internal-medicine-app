@@ -1070,11 +1070,11 @@ def set_article_key_flag(article_id: int):
 @app.route('/api/medical-articles/<int:article_id>/hide-dashboard', methods=['PUT'])
 @jwt_required()
 def set_article_hidden_from_dashboard(article_id: int):
-    """Admin or Senior: set or clear hidden_from_dashboard flag for a medical article"""
+    """Admin only: set or clear hidden_from_dashboard flag for a medical article (seniors can only mark key studies)"""
     current_user_id = int(get_jwt_identity())
     current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role not in ['admin', 'senior']:
-        return jsonify({'error': 'Admin or Senior access required'}), 403
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
 
     data = request.get_json() or {}
     is_hidden = bool(data.get('hidden_from_dashboard'))

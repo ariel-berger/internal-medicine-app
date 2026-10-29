@@ -211,8 +211,8 @@ export default function About() {
           />
         </div>
         <p className="mt-4 text-sm text-slate-600 leading-relaxed">
-          Senior colleagues and admins also see a star button, to mark a Key Study, and a minus button, to hide
-          an article from everyone's dashboard.
+          Senior colleagues and admins also see a star button, to mark a Key Study. Admins also see a minus
+          button, to hide an article from everyone's dashboard.
         </p>
       </section>
 
