@@ -9,6 +9,7 @@ import json
 import re
 import secrets
 import sqlite3
+import unicodedata
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -99,14 +100,16 @@ def add_emails_from_text(conn: sqlite3.Connection, text: str) -> Dict:
     Add every address found in pasted text (one per line, commas, or "Name <email>").
     The result says how many were new, never whether an existing address is subscribed.
     """
+    # Copying from Hebrew-language apps brings invisible direction marks (and zero-width spaces) along
+    text = ''.join(ch for ch in (text or '') if unicodedata.category(ch) != 'Cf')
     found = []
-    for match in EMAIL_RE.findall(text or ''):
+    for match in EMAIL_RE.findall(text):
         email = normalize_email(match)
         if email not in found:
             found.append(email)
     invalid = [
-        token for token in re.split(r"[\s,;<>()\"]+", text or '')
-        if '@' in token and not EMAIL_RE.fullmatch(token.strip(".'"))
+        token for token in re.split(r"[\s,;<>()\"]+", text)
+        if '@' in token and not EMAIL_RE.search(token)
     ]
 
     added = 0
