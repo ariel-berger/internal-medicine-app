@@ -62,19 +62,28 @@ def _numbered_articles(articles: List[Dict]) -> str:
     return rows
 
 
-def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url: str, unsubscribe_url: str) -> Dict:
-    """The email subscribers receive: top articles (title + journal) and a link to the dashboard."""
+def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url: str, unsubscribe_url: str,
+                       has_account: bool = True) -> Dict:
+    """The email subscribers receive: top articles (title + journal) and a link to the dashboard.
+    has_account=False is for addresses an admin added to the list, who may never have logged in."""
     count = len(articles)
     title = f"This week's top {count} articles" if count != 1 else "This week's top article"
     intro = "Here's what to read first from this week's update. Summaries and links are on the dashboard."
 
     rows = _header("INTERNAL NERDS", title, intro) + _numbered_articles(articles) + _button(dashboard_url, "Open the dashboard")
 
+    if has_account:
+        why = (f"You're getting this because you have an Internal Nerds account. It goes automatically to your "
+               f"login email ({recipient_email}), once a week, after the Saturday article update.")
+        settings = "or change it anytime under \"Email notification settings\" at the top of the site."
+    else:
+        why = (f"You're getting this because you were added to the Internal Nerds weekly email list. "
+               f"It goes to {recipient_email} once a week, after the Saturday article update.")
+        settings = "or, once you log in, change it anytime under \"Email notification settings\" at the top of the site."
     footer = (
-        f"You're getting this because you have an Internal Nerds account. It goes automatically to your "
-        f"login email ({escape(recipient_email)}), once a week, after the Saturday article update.<br>"
+        f"{escape(why)}<br>"
         f"Don't want it? <a href=\"{escape(unsubscribe_url, quote=True)}\" style=\"color:#475569;\">Unsubscribe with one click</a>, "
-        f"or change it anytime under \"Email notification settings\" at the top of the site."
+        f"{escape(settings)}"
     )
 
     text = f"{title}\n\n{intro}\n\n"
@@ -82,10 +91,9 @@ def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url
         text += f"{i}. {article.get('title') or 'Untitled'}\n   {article.get('journal') or ''}\n\n"
     text += (
         f"Open the dashboard: {dashboard_url}\n\n"
-        f"---\nYou're getting this because you have an Internal Nerds account. It goes automatically to your "
-        f"login email ({recipient_email}), once a week, after the Saturday article update.\n"
+        f"---\n{why}\n"
         f"Unsubscribe with one click: {unsubscribe_url}\n"
-        f"Or change it anytime under \"Email notification settings\" at the top of the site.\n"
+        f"{settings[0].upper()}{settings[1:]}\n"
     )
 
     return {'subject': title, 'html': _page(rows, footer), 'text': text}
@@ -93,10 +101,10 @@ def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url
 
 def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipients_count: int, review_url: str) -> Dict:
     """The email admins get after the Saturday scan: the suggested top 3 plus every article from the week."""
-    subject = f"Please approve: this week's top {len(suggested)} email to {recipients_count} users"
+    subject = f"Please approve: this week's top {len(suggested)} email to {recipients_count} people"
     intro = (
-        f"Nothing is sent until an admin approves. Once approved, it goes to <strong>{recipients_count} users</strong> "
-        f"(everyone who hasn't unsubscribed). To choose different articles, open the review page and tick the ones you want."
+        f"Nothing is sent until an admin approves. Once approved, it goes to <strong>{recipients_count} people</strong> "
+        f"(everyone on the list who hasn't unsubscribed). To choose different articles, open the review page and tick the ones you want."
     )
 
     rows = _header("INTERNAL NERDS · ADMIN", "This week's email is waiting for your approval", intro)
@@ -136,11 +144,11 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
           </td></tr>"""
     rows += _button(review_url, "Review, change and send")
 
-    footer = "You get this because you're an admin of Internal Nerds. Users only get the weekly email after an admin approves it."
+    footer = "You get this because you're an admin of Internal Nerds. Nobody gets the weekly email until an admin approves it."
 
     text = (
         f"This week's email is waiting for your approval.\n\n"
-        f"Nothing is sent until an admin approves. Once approved, it goes to {recipients_count} users.\n"
+        f"Nothing is sent until an admin approves. Once approved, it goes to {recipients_count} people.\n"
         f"Review, change and send: {review_url}\n\n"
         f"Suggested top 3:\n"
     )

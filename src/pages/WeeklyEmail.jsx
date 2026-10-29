@@ -16,12 +16,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Mail, Loader, Send, SkipForward, FlaskConical, CheckCircle, AlertCircle, Shield, RotateCcw, ExternalLink } from "lucide-react";
+import AddSubscribersCard from "@/components/notifications/AddSubscribersCard";
 
 const formatDate = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
 
 const STATUS_LABELS = {
-  sent: (d) => `Sent to ${d.recipients_count ?? 0} users`,
+  sent: (d) => `Sent to ${d.recipients_count ?? 0} people`,
   skipped: () => "Skipped",
   expired: () => "Not sent (replaced by the next week's email)",
 };
@@ -115,7 +116,7 @@ export default function WeeklyEmail() {
   };
 
   const handleSend = () =>
-    run("send", () => localClient.sendWeeklyDigest(digest.id, orderedSelection), (r) => `Sending to ${r.recipients_count} users. This takes about a minute.`);
+    run("send", () => localClient.sendWeeklyDigest(digest.id, orderedSelection), (r) => `Sending to ${r.recipients_count} people. This takes about a minute.`);
   const handleTest = () =>
     run("test", () => localClient.sendWeeklyDigestTest(digest.id, orderedSelection), (r) => `Test email sent to ${r.sent_to}.`, { reload: false });
   const handleSkip = () => run("skip", () => localClient.skipWeeklyDigest(digest.id), () => "Skipped. Nothing was sent this week.");
@@ -153,7 +154,7 @@ export default function WeeklyEmail() {
           Weekly Email
         </h1>
         <p className="text-slate-600 mt-1">
-          Every Saturday after the scan, this week's email waits here. Nothing reaches users until an admin presses Send.
+          Every Saturday after the scan, this week's email waits here. Nothing reaches anyone until an admin presses Send.
         </p>
       </div>
 
@@ -198,7 +199,7 @@ export default function WeeklyEmail() {
         <Card>
           <CardContent className="py-8 flex items-center gap-3 text-slate-700">
             <Loader className="w-5 h-5 animate-spin text-blue-600" />
-            Sending to {data.recipients_count} users… This page updates by itself.
+            Sending to {data.recipients_count} people… This page updates by itself.
           </CardContent>
         </Card>
       )}
@@ -279,7 +280,7 @@ export default function WeeklyEmail() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Send</CardTitle>
                 <CardDescription>
-                  Goes to <strong>{data.recipients_count} users</strong> (everyone who hasn't unsubscribed).
+                  Goes to <strong>{data.recipients_count} people</strong> (everyone on the list who hasn't unsubscribed).
                   Prepared {formatDate(digest.created_at)}.
                 </CardDescription>
               </CardHeader>
@@ -293,7 +294,7 @@ export default function WeeklyEmail() {
                   onClick={() => setConfirm("send")}
                 >
                   {busy === "send" ? <Loader className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                  Send to {data.recipients_count} users
+                  Send to {data.recipients_count} people
                 </Button>
                 <div className="grid grid-cols-2 gap-2">
                   <Button variant="outline" disabled={orderedSelection.length === 0 || !!busy} onClick={handleTest}>
@@ -326,6 +327,13 @@ export default function WeeklyEmail() {
             </Card>
           </div>
         </div>
+      )}
+
+      {data && (
+        <AddSubscribersCard
+          recipientsCount={data.recipients_count}
+          onRecipientsCountChange={(count) => setData((prev) => ({ ...prev, recipients_count: count }))}
+        />
       )}
 
       {data?.history?.length > 0 && (
@@ -362,7 +370,7 @@ export default function WeeklyEmail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirm === "send" ? `Send this email to ${data?.recipients_count} users now?` : "Skip this week's email?"}
+              {confirm === "send" ? `Send this email to ${data?.recipients_count} people now?` : "Skip this week's email?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm === "send"

@@ -283,6 +283,10 @@ class LocalAPIClient {
   async skipWeeklyDigest(digestId) {
     return this.post(`/admin/weekly-digest/${digestId}/skip`, {});
   }
+
+  async addWeeklyEmailSubscribers(text) {
+    return this.post('/admin/weekly-email/subscribers', { text });
+  }
 }
 
 // Create singleton instance
