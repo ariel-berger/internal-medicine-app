@@ -17,6 +17,13 @@ import MedicalArticleGrid from "../components/dashboard/MedicalArticleGrid";
 import TopStudies from "../components/dashboard/TopStudies";
 import { isMajorJournal } from "@/utils/majorJournals";
 
+// Case reports live on their own page, so they're kept off the dashboard and out of trending
+const isCaseReport = (article) => {
+  if (!article.article_type && !article.publication_type) return false;
+  const articleType = (article.article_type || article.publication_type || '').toLowerCase();
+  return articleType.includes('case report') || articleType.includes('case reports');
+};
+
 export default function Dashboard() {
   const [studies, setStudies] = useState([]);
   const [medicalArticles, setMedicalArticles] = useState([]);
@@ -59,11 +66,6 @@ export default function Dashboard() {
           createdSinceDays: 14  // Only articles added in the last 2 weekly runs, filtered before the ranking-score cutoff
         });
         // Filter out case reports from dashboard
-        const isCaseReport = (article) => {
-          if (!article.article_type && !article.publication_type) return false;
-          const articleType = (article.article_type || article.publication_type || '').toLowerCase();
-          return articleType.includes('case report') || articleType.includes('case reports');
-        };
         medicalArticlesData = medicalArticlesData.filter(article => !isCaseReport(article));
         console.log("Loaded medical articles (excluding case reports):", medicalArticlesData.length);
         console.log("First article sample:", medicalArticlesData[0]);
@@ -227,6 +229,18 @@ export default function Dashboard() {
       // Create a map of medical articles by ID
       const articleMap = new Map(medicalArticlesData.map(a => [a.id, a]));
 
+      // Saved articles from older scans aren't in the dashboard list, so look them up so they can trend too
+      const missingArticleIds = Object.keys(libraryCounts)
+        .filter(key => key.startsWith('article_'))
+        .map(key => parseInt(key.replace('article_', '')))
+        .filter(id => !articleMap.has(id));
+      const fetchedArticles = await Promise.allSettled(missingArticleIds.map(id => MedicalArticle.getById(id)));
+      for (const result of fetchedArticles) {
+        if (result.status === 'fulfilled' && result.value && !isCaseReport(result.value)) {
+          articleMap.set(result.value.id, result.value);
+        }
+      }
+
       // Only include content published in the last 12 months so old articles don't dominate trending
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
@@ -266,7 +280,7 @@ export default function Dashboard() {
             trendingItems.push({
               ...article,
               title: article.title,
-              url: article.url || article.doi ? `https://doi.org/${article.doi}` : null,
+              url: article.url || (article.doi ? `https://doi.org/${article.doi}` : null),
               libraryCount: count,
               isMedicalArticle: true
             });
