@@ -144,7 +144,7 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
           </td></tr>"""
     rows += _button(review_url, "Review, change and send")
 
-    footer = "You get this because you're an admin of Internal Nerds. Nobody gets the weekly email until an admin approves it."
+    footer = "You get this because you approve the Internal Nerds weekly email. Nobody gets it until an admin approves it."
 
     text = (
         f"This week's email is waiting for your approval.\n\n"

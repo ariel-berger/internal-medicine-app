@@ -172,7 +172,9 @@ export default function WeeklyEmail() {
               <CheckCircle className="w-5 h-5 text-green-600" />
               This week's email has been sent
             </CardTitle>
-            <CardDescription>The next one will be prepared after Saturday's scan, and you'll get an email asking to approve it.</CardDescription>
+            <CardDescription>
+              The next one will be prepared after Saturday's scan, and an approval request will be emailed to {data.approver_email}.
+            </CardDescription>
           </CardHeader>
         </Card>
       )}
@@ -182,7 +184,7 @@ export default function WeeklyEmail() {
           <CardHeader>
             <CardTitle>{data?.this_week?.status === "skipped" ? "This week's email was skipped" : "No email waiting for approval"}</CardTitle>
             <CardDescription>
-              After the Saturday scan, this week's email is prepared here and all admins get an email asking to approve it.
+              After the Saturday scan, this week's email is prepared here and an approval request is emailed to {data?.approver_email}.
               If the scan didn't run, you can prepare it by hand from the articles added since Saturday.
             </CardDescription>
           </CardHeader>

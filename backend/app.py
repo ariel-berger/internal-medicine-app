@@ -1859,6 +1859,8 @@ APP_URL = vercel_frontend.rstrip('/')
 BACKEND_URL = os.getenv('BACKEND_URL', 'https://medicaldash-backend.onrender.com').rstrip('/')
 DIGEST_MAX_ARTICLES = 3
 BERLIN = pytz.timezone('Europe/Berlin')
+# Only this person gets the Saturday approval request (any admin can still approve on the Weekly Email page)
+WEEKLY_EMAIL_APPROVER = os.getenv('WEEKLY_EMAIL_APPROVER', 'gil.bnoon@gmail.com').strip().lower()
 
 def _email_store():
     conn = get_medical_connection()
@@ -1960,9 +1962,9 @@ def _digest_email_for(subscriber, articles):
     }
     return email
 
-def prepare_weekly_digest(notify_admins=True):
+def prepare_weekly_digest(notify_approver=True):
     """
-    Create this week's email as 'pending' and, if notify_admins, email the admins asking them to approve it.
+    Create this week's email as 'pending' and, if notify_approver, email WEEKLY_EMAIL_APPROVER asking to approve it.
     Nothing reaches users until an admin approves on the Weekly Email page. Returns (digest or None, message).
     """
     week_key = _current_week_key()
@@ -1990,14 +1992,14 @@ def prepare_weekly_digest(notify_admins=True):
                 return weekly_email_store.get_digest_by_week(conn, week_key), "This week's email is already waiting for approval."
         weekly_email_store.expire_other_pending(conn, week_key)
 
-        if notify_admins and ADMIN_EMAILS:
+        if notify_approver and WEEKLY_EMAIL_APPROVER:
             email = build_approval_email(
                 suggested=articles[:DIGEST_MAX_ARTICLES],
                 all_articles=articles,
                 recipients_count=len(_digest_recipients(conn)),
                 review_url=f"{APP_URL}/WeeklyEmail",
             )
-            send_emails([{**email, 'to': admin_email} for admin_email in sorted(ADMIN_EMAILS)])
+            send_emails([{**email, 'to': WEEKLY_EMAIL_APPROVER}])
     return digest, None
 
 def _deliver_weekly_digest(digest_id, articles):
@@ -2085,6 +2087,7 @@ def get_weekly_digest():
                 'articles': articles,
                 'suggested_ids': [a['id'] for a in articles[:DIGEST_MAX_ARTICLES]],
                 'max_articles': DIGEST_MAX_ARTICLES,
+                'approver_email': WEEKLY_EMAIL_APPROVER,
                 'recipients_count': len(_digest_recipients(conn)),
                 'history': weekly_email_store.digest_history(conn),
             })
@@ -2108,10 +2111,10 @@ def add_weekly_email_subscribers():
 @app.route('/api/admin/weekly-digest/prepare', methods=['POST'])
 @jwt_required()
 def prepare_weekly_digest_now():
-    """Prepare this week's email by hand (e.g. if the Saturday job didn't run). Doesn't email the admins."""
+    """Prepare this week's email by hand (e.g. if the Saturday job didn't run). Doesn't send the approval request."""
     if not _current_admin():
         return jsonify({'error': 'Admin access required'}), 403
-    digest, message = prepare_weekly_digest(notify_admins=False)
+    digest, message = prepare_weekly_digest(notify_approver=False)
     if not digest or digest['status'] != 'pending':
         return jsonify({'error': message}), 409
     return jsonify({'digest': digest, 'message': message})
