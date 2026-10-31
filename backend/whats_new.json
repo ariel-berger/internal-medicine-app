@@ -13,5 +13,10 @@
     "id": 3,
     "date": "2026-10-31",
     "text": "All Studies is complete: It now lists every article that scored above 3, in every specialty, instead of only the top 100. Tap \"Show more\" at the bottom to keep going."
+  },
+  {
+    "id": 4,
+    "date": "2026-10-31",
+    "text": "Login fix: Fixed a problem where, after an app update, you could find yourself signed in to a colleague's account. You may be asked to sign in again once."
   }
 ]

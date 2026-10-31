@@ -285,6 +285,24 @@ class ArticleInteraction(db.Model):
     interaction_type = db.Column(db.String(50), nullable=False) # 'pubmed_click', 'doi_click'
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
 
+# Login tokens name a user by id, but ids are handed out again when the user
+# database is recreated (e.g. on a redeploy), so an old token could resolve to
+# someone else. Tokens also carry the email they were issued for, and every
+# protected request checks it still matches; otherwise the user must log in again.
+def issue_access_token(user):
+    return create_access_token(identity=str(user.id), additional_claims={'email': user.email})
+
+@jwt.user_lookup_loader
+def load_token_user(_jwt_header, jwt_data):
+    user = User.query.get(int(jwt_data['sub']))
+    if not user or user.email != jwt_data.get('email'):
+        return None
+    return user
+
+@jwt.user_lookup_error_loader
+def token_user_mismatch(_jwt_header, _jwt_data):
+    return jsonify({'error': 'Please log in again.'}), 401
+
 # Routes
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -344,7 +362,7 @@ def register():
             print(f"Failed to record login history: {e}")
         _remember_subscriber(user.email)
         
-        access_token = create_access_token(identity=str(user.id))
+        access_token = issue_access_token(user)
         return jsonify({
             'message': 'User created successfully',
             'token': access_token,
@@ -423,7 +441,7 @@ def google_login():
                 user.role = desired_role
                 db.session.commit()
 
-        access_token = create_access_token(identity=str(user.id))
+        access_token = issue_access_token(user)
         
         # Record login
         try:
@@ -474,7 +492,7 @@ def login():
             user.role = desired_role
             db.session.commit()
         
-        access_token = create_access_token(identity=str(user.id))
+        access_token = issue_access_token(user)
 
         # Record login
         try:
