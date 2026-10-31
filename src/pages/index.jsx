@@ -9,6 +9,7 @@ import AllStudies from "./AllStudies";
 import CaseReports from "./CaseReports";
 import About from "./About";
 import WeeklyEmail from "./WeeklyEmail";
+import ScanManagement from "./ScanManagement";
 import Unsubscribe from "./Unsubscribe";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
@@ -32,6 +33,8 @@ const PAGES = {
     About: About,
 
     WeeklyEmail: WeeklyEmail,
+
+    ScanManagement: ScanManagement,
 
 }
 
@@ -71,6 +74,7 @@ function PagesContent() {
                             <Route path="/CaseReports" element={<CaseReports />} />
                             <Route path="/About" element={<About />} />
                             <Route path="/WeeklyEmail" element={<WeeklyEmail />} />
+                            <Route path="/ScanManagement" element={<ScanManagement />} />
                         </Routes>
                     </Layout>
                 </ProtectedRoute>

@@ -131,8 +131,12 @@ export default function AllStudies() {
       const currentUser = await User.me();
       setCurrentUser(currentUser);
       
-      // Load medical articles (all relevant articles)
-      const medicalArticlesData = await MedicalArticle.getAllRelevantArticles({ sort: 'ranking_score' });
+      // All relevant articles, except ones hidden from the dashboard and low scores (see Scan & Score Management)
+      const medicalArticlesData = await MedicalArticle.getAllRelevantArticles({
+        sort: 'ranking_score',
+        excludeHidden: true,
+        excludeLowScores: true,
+      });
       // Filter out case reports from All Studies page
       const isCaseReport = (article) => {
         if (!article.article_type && !article.publication_type) return false;
@@ -199,6 +203,11 @@ export default function AllStudies() {
   };
 
   const handleArticleUpdate = (updatedArticle) => {
+    // An article hidden from the dashboard leaves All Studies too
+    if (updatedArticle.hidden_from_dashboard) {
+      setMedicalArticles(prev => prev.filter(a => a.id !== updatedArticle.id));
+      return;
+    }
     setMedicalArticles(prev => prev.map(a => (a.id === updatedArticle.id ? updatedArticle : a)));
   };
 

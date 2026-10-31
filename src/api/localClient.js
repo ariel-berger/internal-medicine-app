@@ -174,6 +174,7 @@ class LocalAPIClient {
     if (params.sort) queryParams.append('sort', params.sort);
     if (params.excludeHidden !== undefined) queryParams.append('exclude_hidden', params.excludeHidden ? 'true' : 'false');
     if (params.createdSinceDays != null) queryParams.append('created_since_days', String(params.createdSinceDays));
+    if (params.excludeLowScores) queryParams.append('exclude_low_scores', 'true');
 
     const endpoint = `/medical-articles/relevant${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
     return this.get(endpoint);
@@ -286,6 +287,14 @@ class LocalAPIClient {
 
   async skipWeeklyDigest(digestId) {
     return this.post(`/admin/weekly-digest/${digestId}/skip`, {});
+  }
+
+  async getScanReview(weeks) {
+    return this.get(`/admin/scan-review?weeks=${weeks}`);
+  }
+
+  async setArticleIncluded(articleId, included) {
+    return this.put(`/medical-articles/${articleId}/include`, { included: !!included });
   }
 
   async addWeeklyEmailSubscribers(text) {

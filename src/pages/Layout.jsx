@@ -3,7 +3,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info, Mail } from "lucide-react";
+import { Activity, BookOpen, Crown, Library, Trash2, Plus, LogOut, User as UserIcon, FileText, Info, Mail, SlidersHorizontal } from "lucide-react";
 import logoImage from "@/assets/logo.svg";
 import {
   Sidebar,
@@ -78,6 +78,12 @@ const adminNavItems = [
     url: createPageUrl("WeeklyEmail"),
     icon: Mail,
     colorClass: "blue",
+  },
+  {
+    title: "Scan & Score Management",
+    url: createPageUrl("ScanManagement"),
+    icon: SlidersHorizontal,
+    colorClass: "slate",
   },
   {
     title: "Data Management",

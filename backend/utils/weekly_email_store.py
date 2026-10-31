@@ -38,6 +38,12 @@ def init_tables(conn: sqlite3.Connection) -> None:
             recipients_count INTEGER,
             send_error TEXT
         );
+        -- Articles an admin chose to include in All Studies and the weekly list despite a low score
+        CREATE TABLE IF NOT EXISTS included_articles (
+            article_id INTEGER PRIMARY KEY,
+            included_by TEXT,
+            created_at TEXT NOT NULL
+        );
     """)
     # Added after the table first went live: the "What's new" section
     columns = {row[1] for row in conn.execute("PRAGMA table_info(weekly_emails)")}
@@ -190,6 +196,17 @@ def update_digest(conn: sqlite3.Connection, digest_id: int, only_if_status: Opti
     changed = conn.execute(sql, params).rowcount
     conn.commit()
     return changed
+
+
+def set_included(conn: sqlite3.Connection, article_id: int, included: bool, by: str) -> None:
+    if included:
+        conn.execute(
+            "INSERT OR IGNORE INTO included_articles (article_id, included_by, created_at) VALUES (?, ?, ?)",
+            (article_id, by, _now()),
+        )
+    else:
+        conn.execute("DELETE FROM included_articles WHERE article_id = ?", (article_id,))
+    conn.commit()
 
 
 def last_announced_whats_new(conn: sqlite3.Connection) -> int:

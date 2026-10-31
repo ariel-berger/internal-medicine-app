@@ -131,10 +131,38 @@ def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url
     return {'subject': title, 'html': _page(rows, footer), 'text': text}
 
 
+def _low_scored_section(articles: List[Dict], cutoff: int) -> str:
+    if not articles:
+        return ""
+    rows = ""
+    for article in articles:
+        link = (f' <a href="{escape(article["url"], quote=True)}" style="color:#1d4ed8;font-size:13px;">PubMed</a>'
+                if article.get('url') else "")
+        reason = (f'<div style="margin-top:2px;font-size:13px;color:#64748b;font-style:italic;">{escape(article["reason"])}</div>'
+                  if article.get('reason') else "")
+        rows += f"""
+              <tr>
+                <td valign="top" style="padding:8px 8px 8px 0;border-top:1px solid #f1f5f9;font-size:14px;font-weight:bold;color:#334155;width:36px;">{article.get('ranking_score', '–')}</td>
+                <td valign="top" style="padding:8px 0;border-top:1px solid #f1f5f9;">
+                  <div style="font-size:14px;line-height:1.35;color:#0f172a;">{escape(article.get('title') or 'Untitled')}{link}</div>
+                  <div style="margin-top:2px;font-size:13px;color:#64748b;">{escape(article.get('journal') or '')}</div>{reason}
+                </td>
+              </tr>"""
+    return f"""
+          <tr><td style="padding:16px 28px 8px;">
+            <h2 style="margin:0;font-size:16px;color:#0f172a;border-top:1px solid #e2e8f0;padding-top:20px;">Scored {cutoff} or lower this week ({len(articles)})</h2>
+            <p style="margin:6px 0 0;font-size:13px;color:#64748b;">These passed the relevance check but scored too low for All Studies. If one deserves a place, press "Include anyway" on the Scan &amp; Score Management page.</p>
+          </td></tr>
+          <tr><td style="padding:0 28px 8px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">{rows}
+            </table>
+          </td></tr>"""
+
+
 def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipients_count: int, review_url: str,
-                         whats_new: List[str] = None) -> Dict:
+                         whats_new: List[str] = None, low_score_cutoff: int = 3) -> Dict:
     """The approval request after the Saturday scan: the suggested top 3, suggested "What's new" updates,
-    and every article from the week."""
+    and the week's articles that are in All Studies."""
     subject = f"Please approve: this week's top {len(suggested)} email to {recipients_count} people"
     intro = (
         f"Nothing is sent until an admin approves. Once approved, it goes to <strong>{recipients_count} people</strong> "
@@ -168,8 +196,8 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
               </tr>"""
     rows += f"""
           <tr><td style="padding:16px 28px 8px;">
-            <h2 style="margin:0;font-size:16px;color:#0f172a;border-top:1px solid #e2e8f0;padding-top:20px;">All articles from this week ({len(all_articles)})</h2>
-            <p style="margin:6px 0 0;font-size:13px;color:#64748b;">Same order as the dashboard: key studies first, then by score. Case reports and hidden articles are left out.</p>
+            <h2 style="margin:0;font-size:16px;color:#0f172a;border-top:1px solid #e2e8f0;padding-top:20px;">This week's articles in All Studies ({len(all_articles)})</h2>
+            <p style="margin:6px 0 0;font-size:13px;color:#64748b;">Same order as the dashboard: key studies first, then by score. Case reports and hidden articles are left out, and so are scores of {low_score_cutoff} or lower (those are on the Scan &amp; Score Management page).</p>
           </td></tr>
           <tr><td style="padding:0 28px 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
@@ -190,10 +218,29 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
     for i, article in enumerate(suggested, 1):
         text += f"{i}. {article.get('title') or 'Untitled'} ({article.get('journal') or ''})\n"
     text += "\n" + _whats_new_text(whats_new, "Suggested \"What's new\" (you can edit it on the review page)")
-    text += f"\nAll articles from this week ({len(all_articles)}):\n"
+    text += f"\nThis week's articles in All Studies ({len(all_articles)}):\n"
     for article in all_articles:
         score = article.get('ranking_score')
         score_text = f"{score:g}" if isinstance(score, (int, float)) else "-"
         text += f"[{score_text}] {article.get('title') or 'Untitled'} ({article.get('journal') or ''})\n"
 
+    return {'subject': subject, 'html': _page(rows, footer), 'text': text}
+
+
+def build_scan_review_email(low_scored: List[Dict], cutoff: int, review_url: str) -> Dict:
+    """Sent to Gil after each Saturday scan: relevant articles that scored too low for All Studies."""
+    count = len(low_scored)
+    subject = f"Scan review: {count} article{'s' if count != 1 else ''} scored {cutoff} or lower this week"
+    intro = (f"This week's scan found {count} relevant article{'s' if count != 1 else ''} that scored {cutoff} or lower, "
+             f"so {'they are' if count != 1 else 'it is'} not in All Studies. Worth a quick look in case one was scored wrongly.")
+    rows = _header("INTERNAL NERDS · SCAN REVIEW", "Articles that didn't get in", intro)
+    rows += _low_scored_section(low_scored, cutoff)
+    rows += _button(review_url, "Open Scan & Score Management")
+    footer = "You get this after each Saturday scan because you manage the article content of Internal Nerds."
+
+    text = f"Articles that didn't get in\n\n{intro}\n\n"
+    for article in low_scored:
+        text += f"[{article.get('ranking_score')}] {article.get('title') or 'Untitled'} ({article.get('journal') or ''})"
+        text += f" {article['url']}\n" if article.get('url') else "\n"
+    text += f"\nOpen Scan & Score Management: {review_url}\n"
     return {'subject': subject, 'html': _page(rows, footer), 'text': text}

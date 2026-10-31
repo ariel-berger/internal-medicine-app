@@ -299,6 +299,7 @@ export default function WeeklyEmail() {
                             <span className="text-slate-400">Not on the dashboard</span>
                           )}
                           {article.is_key_study && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Key study</span>}
+                          {article.included_anyway && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">Included anyway</span>}
                           {article.url && (
                             <a
                               href={article.url}

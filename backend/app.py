@@ -20,7 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from utils.mailer import send_emails
-from utils.weekly_digest_email import build_digest_email, build_approval_email
+from utils.weekly_digest_email import build_digest_email, build_approval_email, build_scan_review_email
 from utils import weekly_email_store
 
 # Configure logging to show all logs in terminal
@@ -914,6 +914,10 @@ def get_article(article_id):
     except Exception as e:
         return jsonify({'error': f'Failed to get article: {str(e)}'}), 500
 
+# Scores of 3 or lower are left out of All Studies and the weekly email list, unless an admin includes them
+LOW_SCORE_CUTOFF = 3
+LOW_SCORE_CLAUSE = f'AND (ec.ranking_score > {LOW_SCORE_CUTOFF} OR a.id IN (SELECT article_id FROM included_articles))'
+
 @app.route('/api/medical-articles/relevant', methods=['GET'])
 @jwt_required()
 def get_relevant_articles():
@@ -947,6 +951,8 @@ def get_relevant_articles():
         # Check if we should exclude hidden articles (for dashboard)
         exclude_hidden = request.args.get('exclude_hidden', 'false').lower() == 'true'
         hidden_clause = 'AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)' if exclude_hidden else ''
+        if request.args.get('exclude_low_scores', 'false').lower() == 'true':
+            hidden_clause += ' ' + LOW_SCORE_CLAUSE
 
         # Restrict to articles added in the last N days (applied before LIMIT, so
         # recently-added articles aren't crowded out of the ranking cutoff by
@@ -1863,6 +1869,8 @@ DIGEST_MAX_ARTICLES = 3
 BERLIN = pytz.timezone('Europe/Berlin')
 # Only this person gets the Saturday approval request (any admin can still approve on the Weekly Email page)
 WEEKLY_EMAIL_APPROVER = os.getenv('WEEKLY_EMAIL_APPROVER', 'gil.bnoon@gmail.com').strip().lower()
+# Gets the weekly list of low-scored articles after the scan
+SCAN_REVIEW_EMAIL = os.getenv('SCAN_REVIEW_EMAIL', WEEKLY_EMAIL_APPROVER).strip().lower()
 
 def _email_store():
     conn = get_medical_connection()
@@ -1921,21 +1929,31 @@ def _digest_recipients(conn):
         weekly_email_store.ensure_subscriber(conn, user.email, logged_in=True)
     return weekly_email_store.subscribed(conn)
 
-def _week_articles(since, limit=None):
+def _week_articles(since, limit=None, scores='all-studies'):
     """Articles added since `since`, in dashboard order (key studies first, then by score).
     Same filters as the dashboard: relevant, not hidden, no case reports.
+    `scores`: 'all-studies' leaves out low scores like All Studies does, 'low' returns only the low-scored
+    ones not yet included, 'any' applies no score rule (as the dashboard).
     `limit` caps the score-ranked rows before those filters, as the dashboard's request does."""
+    score_clause = {
+        'all-studies': LOW_SCORE_CLAUSE,
+        'low': f'AND ec.ranking_score <= {LOW_SCORE_CUTOFF} AND ia.article_id IS NULL',
+        'any': '',
+    }[scores]
     conn = get_medical_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT a.id, a.title, a.journal, a.article_type, a.publication_type,
-                   ec.ranking_score, a.pmid, a.url
+                   ec.ranking_score, a.pmid, a.url, ec.reason, ia.article_id IS NOT NULL,
+                   a.medical_category, a.created_at
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
+            LEFT JOIN included_articles ia ON ia.article_id = a.id
             WHERE ec.is_relevant = 1
               AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)
               AND a.created_at >= ?
+              {score_clause}
             ORDER BY ec.ranking_score DESC, a.publication_date DESC
             LIMIT ?
         """, (since.strftime('%Y-%m-%d %H:%M:%S'), limit if limit else -1))
@@ -1946,7 +1964,7 @@ def _week_articles(since, limit=None):
     ids = [row[0] for row in rows]
     key_ids = {r.article_id for r in KeyArticle.query.filter(KeyArticle.article_id.in_(ids)).all()} if ids else set()
     articles = []
-    for article_id, title, journal, article_type, publication_type, score, pmid, url in rows:
+    for article_id, title, journal, article_type, publication_type, score, pmid, url, reason, included, category, created_at in rows:
         if 'case report' in (article_type or publication_type or '').lower():
             continue
         articles.append({
@@ -1955,6 +1973,10 @@ def _week_articles(since, limit=None):
             'journal': journal,
             'ranking_score': score,
             'is_key_study': article_id in key_ids,
+            'included_anyway': bool(included) and (score or 0) <= LOW_SCORE_CUTOFF,
+            'reason': reason,
+            'medical_category': category,
+            'created_at': created_at,
             'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
         })
     # Stable sort: keeps score order within key and non-key groups
@@ -1964,10 +1986,20 @@ def _week_articles(since, limit=None):
 def _dashboard_article_ids():
     """What the dashboard shows right now, by the same rules as Dashboard.jsx: the 50 highest-scoring articles
     added in the last 14 days, minus case reports, key studies first, then the first 10."""
-    return [a['id'] for a in _week_articles(datetime.utcnow() - timedelta(days=14), limit=50)[:10]]
+    return [a['id'] for a in _week_articles(datetime.utcnow() - timedelta(days=14), limit=50, scores='any')[:10]]
 
 def _digest_week_articles(digest):
     return _week_articles(_week_start_utc(digest['week_key']))
+
+def send_scan_review_email():
+    """After the Saturday scan, send Gil the relevant articles that scored too low for All Studies."""
+    low_scored = _week_articles(_week_start_utc(_current_week_key()), scores='low')
+    if not low_scored or not SCAN_REVIEW_EMAIL:
+        return f"{len(low_scored)} low-scored articles; no scan review email sent."
+    email = build_scan_review_email(low_scored, LOW_SCORE_CUTOFF, f"{APP_URL}/ScanManagement")
+    send_emails([{**email, 'to': SCAN_REVIEW_EMAIL}])
+    return f"Scan review email sent with {len(low_scored)} low-scored articles."
+
 
 def _chosen_digest_articles(digest, article_ids):
     """Validate the admin's chosen articles against this week's list. Returns (articles, error)."""
@@ -2037,6 +2069,7 @@ def prepare_weekly_digest(notify_approver=True):
                 recipients_count=len(_digest_recipients(conn)),
                 review_url=f"{APP_URL}/WeeklyEmail",
                 whats_new=_whats_new_lines(digest['whats_new'] if digest['whats_new'] is not None else _suggested_whats_new(conn)),
+                low_score_cutoff=LOW_SCORE_CUTOFF,
             )
             send_emails([{**email, 'to': WEEKLY_EMAIL_APPROVER}])
     return digest, None
@@ -2150,6 +2183,61 @@ def add_weekly_email_subscribers():
         result = weekly_email_store.add_emails_from_text(conn, text)
         result['recipients_count'] = len(_digest_recipients(conn))
     return jsonify(result)
+
+def _managed_articles(where_sql, order_sql):
+    """Hidden or included-anyway articles for the Scan & Score Management page (any date, newest first)."""
+    conn = get_medical_connection()
+    try:
+        rows = conn.execute(f"""
+            SELECT a.id, a.title, a.journal, ec.ranking_score, a.pmid, a.url, ec.reason,
+                   a.medical_category, a.created_at
+            FROM articles a
+            JOIN enhanced_classifications ec ON a.id = ec.article_id
+            LEFT JOIN included_articles ia ON ia.article_id = a.id
+            WHERE {where_sql}
+            ORDER BY {order_sql}
+            LIMIT 500
+        """).fetchall()
+    finally:
+        conn.close()
+    return [{
+        'id': article_id, 'title': title, 'journal': journal, 'ranking_score': score, 'reason': reason,
+        'medical_category': category, 'created_at': created_at,
+        'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
+    } for article_id, title, journal, score, pmid, url, reason, category, created_at in rows]
+
+@app.route('/api/admin/scan-review', methods=['GET'])
+@jwt_required()
+def get_scan_review():
+    """Scan & Score Management: articles that didn't get in, ones included anyway, and hidden ones."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    weeks = request.args.get('weeks', 1, type=int)
+    # 1 = since the latest Saturday scan; otherwise the last N weeks
+    since = _week_start_utc(_current_week_key()) if weeks <= 1 else datetime.utcnow() - timedelta(weeks=weeks)
+    try:
+        return jsonify({
+            'low_score_cutoff': LOW_SCORE_CUTOFF,
+            'weeks': weeks,
+            'low_scored': _week_articles(since, scores='low'),
+            'included': _managed_articles(f'ia.article_id IS NOT NULL AND ec.ranking_score <= {LOW_SCORE_CUTOFF}',
+                                          'ia.created_at DESC'),
+            'hidden': _managed_articles('ec.hidden_from_dashboard = 1', 'a.created_at DESC'),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/medical-articles/<int:article_id>/include', methods=['PUT'])
+@jwt_required()
+def set_article_included(article_id: int):
+    """Admin only: include a low-scored article in All Studies and the weekly list anyway (or undo that)."""
+    admin = _current_admin()
+    if not admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    included = bool((request.get_json() or {}).get('included'))
+    with _email_store() as conn:
+        weekly_email_store.set_included(conn, article_id, included, admin.email)
+    return jsonify({'article_id': article_id, 'included': included})
 
 @app.route('/api/admin/weekly-digest/prepare', methods=['POST'])
 @jwt_required()
@@ -2390,6 +2478,13 @@ def scheduled_fetch_articles():
                 task_logger.info(f"📬 Weekly email: {message or 'waiting for admin approval'}")
             except Exception as digest_error:
                 task_logger.error(f"Failed to prepare weekly email: {digest_error}", exc_info=True)
+
+            # Send Gil the articles that scored too low for All Studies, to double-check them
+            try:
+                with app.app_context():
+                    task_logger.info(f"🔎 {send_scan_review_email()}")
+            except Exception as review_error:
+                task_logger.error(f"Failed to send scan review email: {review_error}", exc_info=True)
         else:
             task_logger.error(f"Scheduled article fetch failed: {result.get('error', 'Unknown error')}")
             
