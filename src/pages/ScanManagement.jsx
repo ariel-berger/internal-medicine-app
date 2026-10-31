@@ -1,28 +1,43 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { User } from "@/api/entities";
 import { localClient } from "@/api/localClient";
 import { MedicalArticle } from "@/api/medicalArticles";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SlidersHorizontal, Loader, Shield, ExternalLink, PlusCircle, Undo2, Eye, CheckCircle, AlertCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  SlidersHorizontal, Loader, Shield, ExternalLink, PlusCircle, Undo2, Eye, EyeOff, CheckCircle, AlertCircle,
+  Search, ArrowDownCircle,
+} from "lucide-react";
 
-const PERIODS = [
-  { weeks: 1, label: "Latest scan" },
-  { weeks: 4, label: "Last 4 weeks" },
-  { weeks: 12, label: "Last 12 weeks" },
-];
+const PAGE_SIZE = 50;
+
+// created_at comes from the server as UTC "YYYY-MM-DD HH:MM:SS"
+const parseUtc = (value) => (value ? new Date(value.replace(" ", "T") + "Z") : null);
 
 const formatDate = (value) => {
-  if (!value) return "";
-  const date = new Date(value.replace(" ", "T") + (value.endsWith("Z") ? "" : "Z"));
-  return isNaN(date) ? "" : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const date = parseUtc(value);
+  return date && !isNaN(date) ? date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+};
+
+const monthKey = (value) => (value ? value.slice(0, 7) : "");
+
+const monthLabel = (key) => {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+};
+
+const matchesSearch = (article, term) => {
+  if (!term) return true;
+  const t = term.toLowerCase();
+  return [article.title, article.journal, article.medical_category, article.reason].some((v) => v && v.toLowerCase().includes(t));
 };
 
 function ArticleRow({ article, action }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3">
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
       <span className="w-9 shrink-0 text-center text-sm font-bold text-slate-700 bg-slate-100 rounded px-1 py-0.5">
         {typeof article.ranking_score === "number" ? article.ranking_score : "–"}
       </span>
@@ -45,22 +60,86 @@ function ArticleRow({ article, action }) {
   );
 }
 
-function EmptyNote({ children }) {
-  return <p className="text-sm text-slate-500 py-2">{children}</p>;
+// One tab: month filter, the filtered list a page at a time, and "Show more"
+function ArticleList({ articles, description, emptyText, searchTerm, month, onMonthChange, latestScanStart, renderAction }) {
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  useEffect(() => setVisible(PAGE_SIZE), [searchTerm, month]);
+
+  const months = useMemo(
+    () => Array.from(new Set(articles.map((a) => monthKey(a.created_at)).filter(Boolean))).sort().reverse(),
+    [articles]
+  );
+
+  const filtered = useMemo(
+    () =>
+      articles.filter((a) => {
+        if (month === "latest" && !(latestScanStart && a.created_at >= latestScanStart)) return false;
+        if (month !== "all" && month !== "latest" && monthKey(a.created_at) !== month) return false;
+        return matchesSearch(a, searchTerm);
+      }),
+    [articles, month, latestScanStart, searchTerm]
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600 max-w-2xl">{description}</p>
+        <Select value={month} onValueChange={onMonthChange}>
+          <SelectTrigger className="w-48 bg-white" aria-label="Added in">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {latestScanStart && <SelectItem value="latest">Latest scan</SelectItem>}
+            <SelectItem value="all">All months</SelectItem>
+            {months.map((m) => (
+              <SelectItem key={m} value={m}>
+                Added in {monthLabel(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm text-slate-500 py-4">{searchTerm || month !== "all" ? "Nothing here matches your search or month." : emptyText}</p>
+      ) : (
+        <>
+          <p className="text-xs text-slate-500">
+            Showing {Math.min(visible, filtered.length)} of {filtered.length}
+          </p>
+          {filtered.slice(0, visible).map((article) => (
+            <ArticleRow key={article.id} article={article} action={renderAction(article)} />
+          ))}
+          {filtered.length > visible && (
+            <div className="flex justify-center pt-1">
+              <Button variant="outline" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
+                <ArrowDownCircle className="w-4 h-4 mr-2" />
+                Show more ({filtered.length - visible} left)
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 // Admin page for content decisions: articles that scored too low, ones included anyway, and hidden ones.
 export default function ScanManagement() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [weeks, setWeeks] = useState(1);
   const [data, setData] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [message, setMessage] = useState(null);
+  const [tab, setTab] = useState("low");
+  const [searchTerm, setSearchTerm] = useState("");
+  // "Didn't get in" opens on the latest scan, like the Saturday email that links here
+  const [months, setMonths] = useState({ low: "latest", included: "all", hidden: "all" });
 
-  const load = useCallback(async (period) => {
+  const load = useCallback(async () => {
     try {
-      setData(await localClient.getScanReview(period));
+      setData(await localClient.getScanReview());
     } catch (e) {
       setMessage({ type: "error", text: e.message || "Couldn't load the lists." });
     }
@@ -71,21 +150,13 @@ export default function ScanManagement() {
       try {
         const user = await User.me();
         setCurrentUser(user);
-        if (user.role === "admin") await load(weeks);
+        if (user.role === "admin") await load();
       } catch (e) {
         setCurrentUser(null);
       }
       setIsLoading(false);
     })();
-    // Only on first load; period changes reload below
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const changePeriod = async (value) => {
-    const period = Number(value);
-    setWeeks(period);
-    await load(period);
-  };
+  }, [load]);
 
   const act = async (articleId, fn, successText) => {
     setBusyId(articleId);
@@ -93,7 +164,7 @@ export default function ScanManagement() {
     try {
       await fn();
       setMessage({ type: "success", text: successText });
-      await load(weeks);
+      await load();
     } catch (e) {
       setMessage({ type: "error", text: e.message || "Something went wrong. Please try again." });
     } finally {
@@ -101,7 +172,7 @@ export default function ScanManagement() {
     }
   };
 
-  const includeButton = (article, included) => (
+  const includeButton = (included) => (article) => (
     <Button
       variant="outline"
       size="sm"
@@ -152,6 +223,11 @@ export default function ScanManagement() {
   }
 
   const cutoff = data?.low_score_cutoff ?? 3;
+  const listProps = (key) => ({
+    searchTerm,
+    month: months[key],
+    onMonthChange: (value) => setMonths((prev) => ({ ...prev, [key]: value })),
+  });
 
   return (
     <div className="space-y-6">
@@ -173,66 +249,63 @@ export default function ScanManagement() {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-lg">Didn't get in: scored {cutoff} or lower ({data?.low_scored?.length ?? 0})</CardTitle>
-              <CardDescription className="mt-1">
-                These passed the relevance check but scored too low for All Studies. If one deserves a place, include it
-                anyway. Its score stays the same.
-              </CardDescription>
-            </div>
-            <Select value={String(weeks)} onValueChange={changePeriod}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIODS.map((p) => (
-                  <SelectItem key={p.weeks} value={String(p.weeks)}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {data?.low_scored?.length ? (
-            data.low_scored.map((article) => <ArticleRow key={article.id} article={article} action={includeButton(article, false)} />)
-          ) : (
-            <EmptyNote>Nothing scored {cutoff} or lower in this period.</EmptyNote>
-          )}
-        </CardContent>
-      </Card>
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <Input
+          placeholder="Search title, journal, specialty or reason..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10 professional-card"
+        />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Included anyway ({data?.included?.length ?? 0})</CardTitle>
-          <CardDescription>Low-scored articles an admin put into All Studies.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {data?.included?.length ? (
-            data.included.map((article) => <ArticleRow key={article.id} article={article} action={includeButton(article, true)} />)
-          ) : (
-            <EmptyNote>None yet.</EmptyNote>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs value={tab} onValueChange={setTab} className="w-full">
+        <div className="sticky top-0 z-10 -mx-1 bg-slate-50/95 px-1 py-2 backdrop-blur-sm">
+          <TabsList className="grid w-full grid-cols-3 md:w-[36rem]">
+            <TabsTrigger value="low" className="flex items-center gap-2">
+              <ArrowDownCircle className="w-4 h-4 text-slate-600" />
+              <span className="truncate">Didn't get in ({data?.low_scored?.length ?? 0})</span>
+            </TabsTrigger>
+            <TabsTrigger value="included" className="flex items-center gap-2">
+              <PlusCircle className="w-4 h-4 text-emerald-600" />
+              <span className="truncate">Included ({data?.included?.length ?? 0})</span>
+            </TabsTrigger>
+            <TabsTrigger value="hidden" className="flex items-center gap-2">
+              <EyeOff className="w-4 h-4 text-red-500" />
+              <span className="truncate">Hidden ({data?.hidden?.length ?? 0})</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Hidden from the dashboard ({data?.hidden?.length ?? 0})</CardTitle>
-          <CardDescription>Hidden with the minus button on an article card. They're also left out of All Studies and the weekly email.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {data?.hidden?.length ? (
-            data.hidden.map((article) => <ArticleRow key={article.id} article={article} action={unhideButton(article)} />)
-          ) : (
-            <EmptyNote>No hidden articles.</EmptyNote>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="low" className="mt-4">
+          <ArticleList
+            {...listProps("low")}
+            articles={data?.low_scored || []}
+            latestScanStart={data?.latest_scan_start}
+            description={`Passed the relevance check but scored ${cutoff} or lower, so not in All Studies. If one deserves a place, include it anyway; its score stays the same.`}
+            emptyText={`Nothing scored ${cutoff} or lower yet.`}
+            renderAction={includeButton(false)}
+          />
+        </TabsContent>
+        <TabsContent value="included" className="mt-4">
+          <ArticleList
+            {...listProps("included")}
+            articles={data?.included || []}
+            description="Low-scored articles an admin put into All Studies anyway."
+            emptyText="None yet."
+            renderAction={includeButton(true)}
+          />
+        </TabsContent>
+        <TabsContent value="hidden" className="mt-4">
+          <ArticleList
+            {...listProps("hidden")}
+            articles={data?.hidden || []}
+            description="Hidden with the minus button on an article card. They're also left out of All Studies and the weekly email."
+            emptyText="No hidden articles."
+            renderAction={unhideButton}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

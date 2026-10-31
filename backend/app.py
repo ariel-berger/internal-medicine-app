@@ -2212,14 +2212,12 @@ def get_scan_review():
     """Scan & Score Management: articles that didn't get in, ones included anyway, and hidden ones."""
     if not _current_admin():
         return jsonify({'error': 'Admin access required'}), 403
-    weeks = request.args.get('weeks', 1, type=int)
-    # 1 = since the latest Saturday scan; otherwise the last N weeks
-    since = _week_start_utc(_current_week_key()) if weeks <= 1 else datetime.utcnow() - timedelta(weeks=weeks)
     try:
         return jsonify({
             'low_score_cutoff': LOW_SCORE_CUTOFF,
-            'weeks': weeks,
-            'low_scored': _week_articles(since, scores='low'),
+            # The page filters by month or "latest scan" itself; this is when the latest scan's articles start
+            'latest_scan_start': _week_start_utc(_current_week_key()).strftime('%Y-%m-%d %H:%M:%S'),
+            'low_scored': _week_articles(datetime(2000, 1, 1), scores='low'),
             'included': _managed_articles(f'ia.article_id IS NOT NULL AND ec.ranking_score <= {LOW_SCORE_CUTOFF}',
                                           'ia.created_at DESC'),
             'hidden': _managed_articles('ec.hidden_from_dashboard = 1', 'a.created_at DESC'),

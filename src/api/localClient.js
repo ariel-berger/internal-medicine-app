@@ -289,8 +289,8 @@ class LocalAPIClient {
     return this.post(`/admin/weekly-digest/${digestId}/skip`, {});
   }
 
-  async getScanReview(weeks) {
-    return this.get(`/admin/scan-review?weeks=${weeks}`);
+  async getScanReview() {
+    return this.get('/admin/scan-review');
   }
 
   async setArticleIncluded(articleId, included) {
