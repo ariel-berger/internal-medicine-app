@@ -932,6 +932,19 @@ def get_article(article_id):
     except Exception as e:
         return jsonify({'error': f'Failed to get article: {str(e)}'}), 500
 
+# The parts a ranking score is added up from (classifier.py), shown on Scan & Score Management.
+# The last three only come from older scoring rules.
+SCORE_PART_COLUMNS = [
+    'focus_points', 'type_points', 'prevalence_points', 'hospitalization_points', 'clinical_outcome_points',
+    'impact_factor_points', 'temporality_points', 'prevention_penalty_points', 'biologic_penalty_points',
+    'screening_penalty_points', 'scores_penalty_points', 'subanalysis_penalty_points', 'neurology_penalty_points',
+    'metabolic_penalty_points', 'prognosis_penalty_points', 'guideline_bonus_points',
+]
+
+def _score_part_columns(conn):
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(enhanced_classifications)")}
+    return [c for c in SCORE_PART_COLUMNS if c in existing]
+
 # Scores of 3 or lower are left out of All Studies and the weekly email list, unless an admin includes them
 LOW_SCORE_CUTOFF = 3
 LOW_SCORE_CLAUSE = f'AND (ec.ranking_score > {LOW_SCORE_CUTOFF} OR a.id IN (SELECT article_id FROM included_articles))'
@@ -1965,11 +1978,13 @@ def _week_articles(since, limit=None, scores='all-studies'):
     }[scores]
     conn = get_medical_connection()
     try:
+        part_columns = _score_part_columns(conn)
+        parts_sql = ''.join(f', ec.{c}' for c in part_columns)
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT a.id, a.title, a.journal, a.article_type, a.publication_type,
                    ec.ranking_score, a.pmid, a.url, ec.reason, ia.article_id IS NOT NULL,
-                   a.medical_category, a.created_at
+                   a.medical_category, a.created_at {parts_sql}
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
             LEFT JOIN included_articles ia ON ia.article_id = a.id
@@ -1987,7 +2002,8 @@ def _week_articles(since, limit=None, scores='all-studies'):
     ids = [row[0] for row in rows]
     key_ids = {r.article_id for r in KeyArticle.query.filter(KeyArticle.article_id.in_(ids)).all()} if ids else set()
     articles = []
-    for article_id, title, journal, article_type, publication_type, score, pmid, url, reason, included, category, created_at in rows:
+    for row in rows:
+        article_id, title, journal, article_type, publication_type, score, pmid, url, reason, included, category, created_at = row[:12]
         if 'case report' in (article_type or publication_type or '').lower():
             continue
         articles.append({
@@ -2000,6 +2016,7 @@ def _week_articles(since, limit=None, scores='all-studies'):
             'reason': reason,
             'medical_category': category,
             'created_at': created_at,
+            'score_parts': dict(zip(part_columns, row[12:])),
             'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
         })
     # Stable sort: keeps score order within key and non-key groups
@@ -2214,9 +2231,11 @@ def _managed_articles(where_sql, order_sql):
     """Hidden or included-anyway articles for the Scan & Score Management page (any date, newest first)."""
     conn = get_medical_connection()
     try:
+        part_columns = _score_part_columns(conn)
+        parts_sql = ''.join(f', ec.{c}' for c in part_columns)
         rows = conn.execute(f"""
             SELECT a.id, a.title, a.journal, ec.ranking_score, a.pmid, a.url, ec.reason,
-                   a.medical_category, a.created_at
+                   a.medical_category, a.created_at {parts_sql}
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
             LEFT JOIN included_articles ia ON ia.article_id = a.id
@@ -2226,11 +2245,16 @@ def _managed_articles(where_sql, order_sql):
         """).fetchall()
     finally:
         conn.close()
-    return [{
-        'id': article_id, 'title': title, 'journal': journal, 'ranking_score': score, 'reason': reason,
-        'medical_category': category, 'created_at': created_at,
-        'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
-    } for article_id, title, journal, score, pmid, url, reason, category, created_at in rows]
+    articles = []
+    for row in rows:
+        article_id, title, journal, score, pmid, url, reason, category, created_at = row[:9]
+        articles.append({
+            'id': article_id, 'title': title, 'journal': journal, 'ranking_score': score, 'reason': reason,
+            'medical_category': category, 'created_at': created_at,
+            'score_parts': dict(zip(part_columns, row[9:])),
+            'url': url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None),
+        })
+    return articles
 
 @app.route('/api/admin/scan-review', methods=['GET'])
 @jwt_required()

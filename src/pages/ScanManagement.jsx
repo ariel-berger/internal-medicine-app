@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ScoreBreakdown from "@/components/dashboard/ScoreBreakdown";
 import {
   SlidersHorizontal, Loader, Shield, ExternalLink, PlusCircle, Undo2, Eye, EyeOff, CheckCircle, AlertCircle,
-  Search, ArrowDownCircle,
+  Search, ArrowDownCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -36,6 +37,7 @@ const matchesSearch = (article, term) => {
 };
 
 function ArticleRow({ article, action }) {
+  const [showScore, setShowScore] = useState(false);
   return (
     <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
       <span className="w-9 shrink-0 text-center text-sm font-bold text-slate-700 bg-slate-100 rounded px-1 py-0.5">
@@ -54,6 +56,18 @@ function ArticleRow({ article, action }) {
           )}
         </div>
         {article.reason && <div className="mt-1 text-xs italic text-slate-500">{article.reason}</div>}
+        {article.score_parts && (
+          <button
+            type="button"
+            onClick={() => setShowScore((v) => !v)}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline underline-offset-4"
+            aria-expanded={showScore}
+          >
+            {showScore ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showScore ? "Hide score details" : "Score details"}
+          </button>
+        )}
+        {showScore && <ScoreBreakdown parts={article.score_parts} score={article.ranking_score} />}
       </div>
       <div className="shrink-0">{action}</div>
     </div>
