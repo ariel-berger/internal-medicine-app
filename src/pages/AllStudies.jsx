@@ -33,7 +33,7 @@ const ARTICLES_PAGE_SIZE = 60;
 const normalizeSpecialty = (value) =>
   (value || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
 
-function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
+function AllStudiesFilters({ onFilterChange, monthYearOptions, specialtyOptions }) {
   const [selectedSpecialties, setSelectedSpecialties] = useState(new Set(SPECIALTIES));
   const [monthYear, setMonthYear] = useState('all');
   const [sortBy, setSortBy] = useState('score');
@@ -66,7 +66,7 @@ function AllStudiesFilters({ onFilterChange, monthYearOptions }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__ALL__">All Specialties</SelectItem>
-              {SPECIALTIES.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
+              {specialtyOptions.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -251,6 +251,18 @@ export default function AllStudies() {
     return Array.from(options.values()).sort((a,b) => b.date - a.date);
   }, [allStudies, medicalArticles]);
 
+  // Only offer specialties that have at least one article or study
+  const specialtyOptions = useMemo(() => {
+    const present = new Set();
+    medicalArticles.forEach(article => {
+      if (article.medical_category) present.add(normalizeSpecialty(article.medical_category));
+    });
+    allStudies.forEach(study => {
+      study.specialties.forEach(s => present.add(normalizeSpecialty(s)));
+    });
+    return SPECIALTIES.filter(s => present.has(normalizeSpecialty(s)));
+  }, [allStudies, medicalArticles]);
+
   const filteredStudies = useMemo(() => {
     let filtered = allStudies.filter(study => {
       const { specialties, monthYear } = filters;
@@ -391,7 +403,7 @@ export default function AllStudies() {
         </div>
        </div>
 
-      <AllStudiesFilters onFilterChange={setFilters} monthYearOptions={monthYearOptions} />
+      <AllStudiesFilters onFilterChange={setFilters} monthYearOptions={monthYearOptions} specialtyOptions={specialtyOptions} />
 
       {/* Medical Articles Section */}
       <div className="space-y-4">

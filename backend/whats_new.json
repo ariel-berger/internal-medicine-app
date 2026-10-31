@@ -18,5 +18,10 @@
     "id": 4,
     "date": "2026-10-31",
     "text": "Login fix: Fixed a problem where, after an app update, you could find yourself signed in to a colleague's account. You may be asked to sign in again once."
+  },
+  {
+    "id": 5,
+    "date": "2026-10-31",
+    "text": "Tidier specialty filter: On All Studies, the specialty list now only shows specialties that actually have articles, so you won't land on an empty page."
   }
 ]
