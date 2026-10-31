@@ -64,8 +64,8 @@ export default function EmailSettingsButton() {
               Email notification settings
             </DialogTitle>
             <DialogDescription className="text-slate-600">
-              Every Saturday, after the new articles are added, we send one short email with the week's
-              top 3 articles (title and journal) and a link to the dashboard.
+              Every Saturday, after the new articles are added, we send one short email with 3 suggested
+              articles (title and journal) and a link to the dashboard.
             </DialogDescription>
           </DialogHeader>
 
@@ -82,7 +82,7 @@ export default function EmailSettingsButton() {
 
               <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-3 cursor-pointer">
                 <div>
-                  <div className="font-medium text-slate-900">Weekly top 3 email</div>
+                  <div className="font-medium text-slate-900">Weekly email</div>
                   <div className="text-sm text-slate-500">
                     {prefs.weekly_digest ? "On: you'll get it every Saturday." : "Off: you won't get the weekly email."}
                   </div>
@@ -91,7 +91,7 @@ export default function EmailSettingsButton() {
                   checked={prefs.weekly_digest}
                   onCheckedChange={handleToggle}
                   disabled={isSaving}
-                  aria-label="Weekly top 3 email"
+                  aria-label="Weekly email"
                 />
               </label>
 

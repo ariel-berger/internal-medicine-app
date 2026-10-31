@@ -59,7 +59,7 @@ export default function Unsubscribe() {
               <CardHeader>
                 <CardTitle>Stop the weekly email?</CardTitle>
                 <CardDescription>
-                  You get one email every Saturday with the week's top 3 articles, sent to <strong>{info.email}</strong>.
+                  You get one email every Saturday with 3 suggested articles, sent to <strong>{info.email}</strong>.
                 </CardDescription>
               </CardHeader>
               <CardContent>

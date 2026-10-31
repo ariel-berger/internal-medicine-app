@@ -1859,7 +1859,7 @@ def get_admin_system_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ---- Weekly "top 3" email ----
+# ---- Weekly email ----
 # Subscribers and weekly email records live in the articles database (see utils/weekly_email_store.py),
 # which survives server restarts. Admins only see totals, never who has unsubscribed.
 
@@ -2471,7 +2471,7 @@ def scheduled_fetch_articles():
             else:
                 task_logger.warning("No admin emails configured. Skipping email notification.")
 
-            # Prepare the weekly "top 3" email; it waits for an admin to approve it
+            # Prepare the weekly email; it waits for an admin to approve it
             try:
                 with app.app_context():
                     _, message = prepare_weekly_digest()
