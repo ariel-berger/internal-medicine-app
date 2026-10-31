@@ -8,5 +8,10 @@
     "id": 2,
     "date": "2026-10-26",
     "text": "Weekly email: That's this email! Every Saturday you'll get the week's top 3 articles to read. You can turn it off anytime with the link at the bottom, or under \"Email notification settings\" at the top of the site."
+  },
+  {
+    "id": 3,
+    "date": "2026-10-31",
+    "text": "All Studies shows everything: It now lists every article the app has found, in every specialty, not just the top 100. Tap \"Show more\" at the bottom to keep going."
   }
 ]

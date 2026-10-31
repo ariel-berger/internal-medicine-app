@@ -8,6 +8,7 @@ import { MedicalArticle } from '@/api/medicalArticles';
 import { getStatusMap as getArticleStatusMap, setStatus as setArticleStatus } from '@/api/articleStatuses';
 import { Input } from "@/components/ui/input";
 import { Search, SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { format, getYear, getMonth, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
 import StudyGrid from '../components/dashboard/StudyGrid';
@@ -20,8 +21,13 @@ const SPECIALTIES = [
   "Cardiology", "Nephrology", "Endocrinology", "Pulmonology", 
   "Gastroenterology", "Rheumatology", "Infectious diseases", 
   "Hematology", "Critical_Care", "General_Internal_Medicine", "Neurology",
-  "Geriatrics", "Oncology"
+  "Geriatrics", "Oncology",
+  // Further categories the article classifier uses (backend/medical_processing/config.py)
+  "Immunology", "Diabetes", "Lipidology", "Nutrition", "Psychiatry", "Pediatrics", "General medicine", "Other"
 ];
+
+// Long lists are shown a page at a time so the page stays quick on phones
+const ARTICLES_PAGE_SIZE = 60;
 
 // Normalize specialty/category strings to a common comparable form
 const normalizeSpecialty = (value) =>
@@ -107,6 +113,7 @@ export default function AllStudies() {
   const [users, setUsers] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [visibleArticleCount, setVisibleArticleCount] = useState(ARTICLES_PAGE_SIZE);
   const [currentUser, setCurrentUser] = useState(null);
   const [filters, setFilters] = useState({
     specialties: new Set(SPECIALTIES),
@@ -125,10 +132,7 @@ export default function AllStudies() {
       setCurrentUser(currentUser);
       
       // Load medical articles (all relevant articles)
-      const medicalArticlesData = await MedicalArticle.getRelevantArticles({ 
-        limit: 100, // Get more articles for the all studies page
-        sort: 'ranking_score' 
-      });
+      const medicalArticlesData = await MedicalArticle.getAllRelevantArticles({ sort: 'ranking_score' });
       // Filter out case reports from All Studies page
       const isCaseReport = (article) => {
         if (!article.article_type && !article.publication_type) return false;
@@ -248,7 +252,8 @@ export default function AllStudies() {
 
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
       const studySpecialties = Array.isArray(study.specialties) ? study.specialties : (study.specialty ? [study.specialty] : []);
-      const specialtyMatch = studySpecialties.length === 0 || studySpecialties.some(s => normalizedSelected.has(normalizeSpecialty(s)));
+      const specialtyMatch = specialties.size === SPECIALTIES.length || studySpecialties.length === 0 ||
+        studySpecialties.some(s => normalizedSelected.has(normalizeSpecialty(s)));
       
       let dateMatch = true;
       if (monthYear !== 'all') {
@@ -292,6 +297,10 @@ export default function AllStudies() {
     return filtered;
   }, [allStudies, searchTerm, filters]);
 
+  useEffect(() => {
+    setVisibleArticleCount(ARTICLES_PAGE_SIZE);
+  }, [filters, searchTerm]);
+
   const filteredArticles = useMemo(() => {
     let filtered = medicalArticles.filter(article => {
       const { specialties, monthYear } = filters;
@@ -301,8 +310,10 @@ export default function AllStudies() {
         (article.journal && article.journal.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (article.medical_category && article.medical_category.toLowerCase().includes(searchTerm.toLowerCase()));
 
+      // "All Specialties" shows every article, whatever category it was given
       const normalizedSelected = new Set(Array.from(specialties).map(normalizeSpecialty));
-      const specialtyMatch = article.medical_category && normalizedSelected.has(normalizeSpecialty(article.medical_category));
+      const specialtyMatch = specialties.size === SPECIALTIES.length ||
+        (article.medical_category && normalizedSelected.has(normalizeSpecialty(article.medical_category)));
       
       let dateMatch = true;
       if (monthYear !== 'all') {
@@ -384,7 +395,7 @@ export default function AllStudies() {
           </p>
         </div>
         <MedicalArticleGrid
-          articles={filteredArticles}
+          articles={filteredArticles.slice(0, visibleArticleCount)}
           isLoading={isLoading}
           statusMap={articleStatuses}
           onStatusChange={handleArticleStatusChange}
@@ -392,6 +403,13 @@ export default function AllStudies() {
           isSenior={currentUser?.role === 'senior'}
           onArticleUpdate={handleArticleUpdate}
         />
+        {!isLoading && filteredArticles.length > visibleArticleCount && (
+          <div className="flex justify-center">
+            <Button variant="outline" onClick={() => setVisibleArticleCount((count) => count + ARTICLES_PAGE_SIZE)}>
+              Show more ({filteredArticles.length - visibleArticleCount} left)
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Regular Studies Section */}

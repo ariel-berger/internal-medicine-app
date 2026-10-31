@@ -73,6 +73,17 @@ export class MedicalArticle {
     }
   }
 
+  // Every relevant article, fetched in pages so none are left out
+  static async getAllRelevantArticles(params = {}) {
+    const pageSize = 500;
+    const all = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await MedicalArticle.getRelevantArticles({ ...params, limit: pageSize, offset });
+      all.push(...page);
+      if (page.length < pageSize) return all;
+    }
+  }
+
   static async getRelevantArticlesStats() {
     try {
       return await localClient.getRelevantArticlesStats();
