@@ -1871,6 +1871,11 @@ BERLIN = pytz.timezone('Europe/Berlin')
 WEEKLY_EMAIL_APPROVER = os.getenv('WEEKLY_EMAIL_APPROVER', 'gil.bnoon@gmail.com').strip().lower()
 # Gets the weekly list of low-scored articles after the scan
 SCAN_REVIEW_EMAIL = os.getenv('SCAN_REVIEW_EMAIL', WEEKLY_EMAIL_APPROVER).strip().lower()
+# The weekly email comes from Gil: her name, replies to her, and her address once the sending Gmail account
+# is allowed to "send mail as" it (set WEEKLY_EMAIL_FROM then; until then Gmail uses its own address)
+WEEKLY_EMAIL_FROM_NAME = os.getenv('WEEKLY_EMAIL_FROM_NAME', 'Gil from Internal Nerds')
+WEEKLY_EMAIL_FROM = os.getenv('WEEKLY_EMAIL_FROM', '').strip().lower()
+WEEKLY_EMAIL_REPLY_TO = os.getenv('WEEKLY_EMAIL_REPLY_TO', WEEKLY_EMAIL_APPROVER).strip().lower()
 
 def _email_store():
     conn = get_medical_connection()
@@ -2025,6 +2030,9 @@ def _digest_email_for(subscriber, articles, whats_new):
         whats_new=whats_new,
     )
     email['to'] = subscriber['email']
+    email['from_name'] = WEEKLY_EMAIL_FROM_NAME
+    email['from_email'] = WEEKLY_EMAIL_FROM or None
+    email['reply_to'] = WEEKLY_EMAIL_REPLY_TO
     # Lets mail apps (Gmail, Apple Mail) show their own one-click "Unsubscribe" button
     email['headers'] = {
         'List-Unsubscribe': f"<{BACKEND_URL}/api/email/unsubscribe?token={token}>",

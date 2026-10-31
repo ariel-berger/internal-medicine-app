@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
+from email.utils import formataddr, parseaddr
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,9 @@ def send_emails(messages: List[Dict]) -> int:
     """
     Send several emails over a single SMTP connection.
 
-    Each message is a dict with: to, subject, html, text, and optional headers (dict).
-    Returns the number of emails sent successfully.
+    Each message is a dict with: to, subject, html, text, and optional headers (dict), from_name and
+    from_email (override the sender; Gmail only honours from_email if the account may "send mail as" it)
+    and reply_to. Returns the number of emails sent successfully.
 
     If EMAIL_OUTBOX_DIR is set, emails are written there as .html files instead of
     being sent (for local testing, so real users never get test emails).
@@ -48,9 +49,7 @@ def send_emails(messages: List[Dict]) -> int:
         logger.warning("SMTP credentials not configured. Skipping %d email(s).", len(messages))
         return 0
 
-    from_email = os.getenv('SMTP_FROM_EMAIL', smtp_username)
-    if '<' not in from_email:
-        from_email = formataddr(('Internal Nerds', from_email))
+    default_from_address = parseaddr(os.getenv('SMTP_FROM_EMAIL', smtp_username))[1] or smtp_username
 
     sent = 0
     try:
@@ -60,8 +59,11 @@ def send_emails(messages: List[Dict]) -> int:
             for message in messages:
                 msg = MIMEMultipart('alternative')
                 msg['Subject'] = message['subject']
-                msg['From'] = from_email
+                msg['From'] = formataddr((message.get('from_name') or 'Internal Nerds',
+                                          message.get('from_email') or default_from_address))
                 msg['To'] = message['to']
+                if message.get('reply_to'):
+                    msg['Reply-To'] = message['reply_to']
                 for name, value in (message.get('headers') or {}).items():
                     msg[name] = value
                 msg.attach(MIMEText(message['text'], 'plain', 'utf-8'))
