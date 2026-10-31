@@ -1921,9 +1921,10 @@ def _digest_recipients(conn):
         weekly_email_store.ensure_subscriber(conn, user.email, logged_in=True)
     return weekly_email_store.subscribed(conn)
 
-def _week_articles(since):
+def _week_articles(since, limit=None):
     """Articles added since `since`, in dashboard order (key studies first, then by score).
-    Same filters as the dashboard: relevant, not hidden, no case reports."""
+    Same filters as the dashboard: relevant, not hidden, no case reports.
+    `limit` caps the score-ranked rows before those filters, as the dashboard's request does."""
     conn = get_medical_connection()
     try:
         cursor = conn.cursor()
@@ -1936,7 +1937,8 @@ def _week_articles(since):
               AND (ec.hidden_from_dashboard IS NULL OR ec.hidden_from_dashboard = 0)
               AND a.created_at >= ?
             ORDER BY ec.ranking_score DESC, a.publication_date DESC
-        """, (since.strftime('%Y-%m-%d %H:%M:%S'),))
+            LIMIT ?
+        """, (since.strftime('%Y-%m-%d %H:%M:%S'), limit if limit else -1))
         rows = cursor.fetchall()
     finally:
         conn.close()
@@ -1958,6 +1960,11 @@ def _week_articles(since):
     # Stable sort: keeps score order within key and non-key groups
     articles.sort(key=lambda a: not a['is_key_study'])
     return articles
+
+def _dashboard_article_ids():
+    """What the dashboard shows right now, by the same rules as Dashboard.jsx: the 50 highest-scoring articles
+    added in the last 14 days, minus case reports, key studies first, then the first 10."""
+    return [a['id'] for a in _week_articles(datetime.utcnow() - timedelta(days=14), limit=50)[:10]]
 
 def _digest_week_articles(digest):
     return _week_articles(_week_start_utc(digest['week_key']))
@@ -2121,6 +2128,7 @@ def get_weekly_digest():
                 'this_week': weekly_email_store.get_digest_by_week(conn, _current_week_key()),
                 'articles': articles,
                 'suggested_ids': [a['id'] for a in articles[:DIGEST_MAX_ARTICLES]],
+                'on_dashboard_ids': _dashboard_article_ids() if digest else [],
                 'max_articles': DIGEST_MAX_ARTICLES,
                 'approver_email': WEEKLY_EMAIL_APPROVER,
                 'recipients_count': len(_digest_recipients(conn)),

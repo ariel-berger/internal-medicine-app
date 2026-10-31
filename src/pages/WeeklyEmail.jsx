@@ -167,6 +167,8 @@ export default function WeeklyEmail() {
   }
 
   const canChoose = digest?.status === "pending";
+  const onDashboard = new Set(data?.on_dashboard_ids || []);
+  const picksOffDashboard = orderedSelection.filter((id) => !onDashboard.has(id)).length;
   const selectionFull = orderedSelection.length >= maxArticles;
   const isSuggestedSelection =
     orderedSelection.length === (data?.suggested_ids || []).length &&
@@ -240,7 +242,8 @@ export default function WeeklyEmail() {
                 <CardTitle className="text-lg">This week's articles ({articles.length})</CardTitle>
                 <CardDescription>
                   Tick up to {maxArticles}. The suggested ones follow the dashboard order: key studies first, then by score.
-                  Case reports and articles hidden from the dashboard are left out.
+                  Case reports and articles hidden from the dashboard are left out. The dashboard only shows its top 10, so
+                  some of this week's articles are only in All Studies.
                 </CardDescription>
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-sm font-medium text-slate-700">
@@ -256,6 +259,12 @@ export default function WeeklyEmail() {
                     </button>
                   )}
                 </div>
+                {picksOffDashboard > 0 && (
+                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    {picksOffDashboard === 1 ? "1 of your picks isn't" : `${picksOffDashboard} of your picks aren't`} on the
+                    dashboard right now. Readers can still find {picksOffDashboard === 1 ? "it" : "them"} in All Studies.
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
                 {articles.map((article) => {
@@ -284,6 +293,11 @@ export default function WeeklyEmail() {
                         <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                           <span>{article.journal}</span>
                           {suggested && <span className="rounded bg-blue-100 px-1.5 py-0.5 font-semibold text-blue-700">Suggested</span>}
+                          {onDashboard.has(article.id) ? (
+                            <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-800">On the dashboard</span>
+                          ) : (
+                            <span className="text-slate-400">Not on the dashboard</span>
+                          )}
                           {article.is_key_study && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Key study</span>}
                           {article.url && (
                             <a
