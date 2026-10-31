@@ -933,12 +933,14 @@ def get_article(article_id):
         return jsonify({'error': f'Failed to get article: {str(e)}'}), 500
 
 # The parts a ranking score is added up from (classifier.py), shown on Scan & Score Management.
-# The last three only come from older scoring rules.
+# metabolic/prognosis/guideline only come from older scoring rules; the prevention and biologic
+# penalties are saved separately only for articles scored after they were added (NULL before).
 SCORE_PART_COLUMNS = [
     'focus_points', 'type_points', 'prevalence_points', 'hospitalization_points', 'clinical_outcome_points',
     'impact_factor_points', 'temporality_points', 'prevention_penalty_points', 'biologic_penalty_points',
     'screening_penalty_points', 'scores_penalty_points', 'subanalysis_penalty_points', 'neurology_penalty_points',
     'metabolic_penalty_points', 'prognosis_penalty_points', 'guideline_bonus_points',
+    'prevention_focus_penalty_points', 'biologic_focus_penalty_points',
 ]
 
 def _score_part_columns(conn):

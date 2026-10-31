@@ -12,10 +12,12 @@ const SCORE_PARTS = [
   { key: "temporality_points", label: "Temporality", meaning: {} },
 ];
 
-// Penalties and older rules are only listed when they changed the score. The prevention and biologic
-// penalties count toward the score but aren't saved separately (operations.py), so they appear as the
-// gap between the saved parts and the saved score.
+// Penalties and older rules are only listed when they changed the score. Articles scored before the
+// prevention and biologic penalties were saved separately (their columns are null) show them as the gap
+// between the saved parts and the saved score.
 const ADJUSTMENTS = [
+  { key: "prevention_focus_penalty_points", label: "Prevention or prophylaxis focus" },
+  { key: "biologic_focus_penalty_points", label: "Biologic treatment focus" },
   { key: "screening_penalty_points", label: "Screening focus" },
   { key: "scores_penalty_points", label: "Clinical scores focus" },
   { key: "subanalysis_penalty_points", label: "Subanalysis of an earlier study" },
@@ -46,8 +48,10 @@ export default function ScoreBreakdown({ parts, score }) {
   const value = (key) => (typeof parts[key] === "number" ? parts[key] : 0);
   const adjustments = ADJUSTMENTS.filter((p) => value(p.key) !== 0);
   const sum = [...SCORE_PARTS, ...ADJUSTMENTS].reduce((total, p) => total + value(p.key), 0);
+  const penaltiesSaved =
+    typeof parts.prevention_focus_penalty_points === "number" || typeof parts.biologic_focus_penalty_points === "number";
   const gap = sum - score;
-  const unsavedPenalty = gap > 0 && gap <= 2 ? -gap : 0;
+  const unsavedPenalty = !penaltiesSaved && gap > 0 && gap <= 2 ? -gap : 0;
   const total = sum + unsavedPenalty;
 
   return (

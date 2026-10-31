@@ -19,7 +19,8 @@ from .database.schema import (
     add_hidden_from_dashboard_column,
     add_new_penalty_scoring_columns,
     add_temporality_points_column,
-    migrate_penalty_scoring_columns
+    migrate_penalty_scoring_columns,
+    add_prevention_biologic_penalty_columns
 )
 from .config import JOURNALS
 
@@ -42,6 +43,7 @@ class MedicalArticlesService:
             add_temporality_points_column()
             migrate_penalty_scoring_columns()
             add_hidden_from_dashboard_column()
+            add_prevention_biologic_penalty_columns()
             logger.info("✅ Database initialized and migrated successfully")
             return True
         except Exception as e:

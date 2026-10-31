@@ -510,6 +510,33 @@ def add_hidden_from_dashboard_column():
     finally:
         conn.close()
 
+def add_prevention_biologic_penalty_columns():
+    """
+    Add columns that save the prevention and biologic-treatment penalties separately.
+
+    New names on purpose: older databases have prevention_penalty_points and biologic_penalty_points
+    columns that once held what are now the screening and clinical-scores penalties (see
+    migrate_penalty_scoring_columns). No default, so NULL means "scored before these were saved".
+    """
+    conn = sqlite3.connect(get_database_path())
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("PRAGMA table_info(enhanced_classifications)")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        for column in ('prevention_focus_penalty_points', 'biologic_focus_penalty_points'):
+            if column not in columns:
+                cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {column} INTEGER')
+                print(f"SUCCESS: Added {column} column")
+        conn.commit()
+
+    except sqlite3.Error as e:
+        print(f"ERROR: Error adding prevention and biologic penalty columns: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 def get_connection():
     """Get database connection."""
     return sqlite3.connect(get_database_path())
@@ -524,4 +551,5 @@ if __name__ == "__main__":
     add_temporality_points_column()
     migrate_penalty_scoring_columns()
     add_hidden_from_dashboard_column()
+    add_prevention_biologic_penalty_columns()
     print("Database created and migrated successfully!")

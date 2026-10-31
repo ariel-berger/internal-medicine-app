@@ -323,8 +323,9 @@ class ArticleDatabase:
                  clinical_bottom_line, tags, ranking_score, focus_points, type_points,
                  prevalence_points, hospitalization_points, clinical_outcome_points, impact_factor_points,
                  neurology_penalty_points, metabolic_penalty_points, screening_penalty_points, scores_penalty_points,
-                 subanalysis_penalty_points, prognosis_penalty_points, classifier_version, created_at, updated_at, temporality_points)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+                 subanalysis_penalty_points, prognosis_penalty_points, classifier_version, created_at, updated_at, temporality_points,
+                 prevention_focus_penalty_points, biologic_focus_penalty_points)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)
             ''', (
                 article_id,
                 classification_data.get('participants'),
@@ -347,7 +348,9 @@ class ArticleDatabase:
                 classification_data.get('subanalysis_penalty_points', 0),
                 classification_data.get('prognosis_penalty_points', 0),
                 classification_data.get('classifier_version', CLAUDE_MODEL),
-                ranking_breakdown.get('temporality_points', 0)
+                ranking_breakdown.get('temporality_points', 0),
+                classification_data.get('prevention_penalty_points'),
+                classification_data.get('biologic_penalty_points')
             ))
                 
             self.conn.commit()
@@ -547,7 +550,8 @@ def batch_insert_articles(articles: List[Dict]) -> int:
                                  'clinical_bottom_line', 'tags', 'ranking_score', 'ranking_breakdown',
                                  'neurology_penalty_points',
                                  'metabolic_penalty_points', 'screening_penalty_points', 'scores_penalty_points',
-                                 'subanalysis_penalty_points', 'prognosis_penalty_points']
+                                 'subanalysis_penalty_points', 'prognosis_penalty_points',
+                                 'prevention_penalty_points', 'biologic_penalty_points']
                 
                 if any(field in article for field in enhanced_fields):
                     # Store enhanced classification data
