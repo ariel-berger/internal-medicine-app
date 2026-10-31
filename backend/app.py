@@ -5,6 +5,8 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from sqlalchemy import text
 from datetime import datetime, timedelta
 import os
+import json
+import re
 import sqlite3
 from contextlib import closing
 from dotenv import load_dotenv
@@ -1877,6 +1879,34 @@ def _week_start_utc(week_key):
     saturday = BERLIN.localize(datetime.strptime(week_key, '%Y-%m-%d'))
     return saturday.astimezone(pytz.utc).replace(tzinfo=None)
 
+WHATS_NEW_PATH = Path(__file__).resolve().parent / 'whats_new.json'
+WHATS_NEW_MAX_CHARS = 3000
+
+def _whats_new_entries():
+    """Plain-language notes about app changes users will notice (oldest first). See whats_new.json."""
+    try:
+        return json.loads(WHATS_NEW_PATH.read_text(encoding='utf-8'))
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Couldn't read whats_new.json: {e}")
+        return []
+
+def _suggested_whats_new(conn):
+    """Updates not yet announced in a sent weekly email, newest first, one per line."""
+    announced = weekly_email_store.last_announced_whats_new(conn)
+    return '\n'.join(e['text'] for e in reversed(_whats_new_entries()) if e['id'] > announced)
+
+def _whats_new_lines(text):
+    """One update per line; list markers people type ("-", "•", "1.") are dropped."""
+    lines = (re.sub(r'^\s*(?:[-*•]|\d+[.)])\s*', '', line).strip() for line in (text or '').splitlines())
+    return [line for line in lines if line]
+
+def _requested_whats_new(conn, digest):
+    """The What's new text sent with the request, else the admin's saved edit, else the suggestion."""
+    text = (request.get_json(silent=True) or {}).get('whats_new')
+    if isinstance(text, str):
+        return text
+    return digest['whats_new'] if digest['whats_new'] is not None else _suggested_whats_new(conn)
+
 def _remember_subscriber(email):
     """Everyone who logs in goes on the weekly email list (an existing on/off choice is kept)."""
     try:
@@ -1945,7 +1975,7 @@ def _chosen_digest_articles(digest, article_ids):
         return None, "Some of the chosen articles aren't in this week's list anymore. Reload the page and try again."
     return [week[i] for i in ids], None
 
-def _digest_email_for(subscriber, articles):
+def _digest_email_for(subscriber, articles, whats_new):
     token = subscriber['unsubscribe_token']
     email = build_digest_email(
         articles,
@@ -1953,6 +1983,7 @@ def _digest_email_for(subscriber, articles):
         dashboard_url=f"{APP_URL}/Dashboard",
         unsubscribe_url=f"{APP_URL}/unsubscribe?token={token}",
         has_account=subscriber['has_logged_in'],
+        whats_new=whats_new,
     )
     email['to'] = subscriber['email']
     # Lets mail apps (Gmail, Apple Mail) show their own one-click "Unsubscribe" button
@@ -1998,16 +2029,17 @@ def prepare_weekly_digest(notify_approver=True):
                 all_articles=articles,
                 recipients_count=len(_digest_recipients(conn)),
                 review_url=f"{APP_URL}/WeeklyEmail",
+                whats_new=_whats_new_lines(digest['whats_new'] if digest['whats_new'] is not None else _suggested_whats_new(conn)),
             )
             send_emails([{**email, 'to': WEEKLY_EMAIL_APPROVER}])
     return digest, None
 
-def _deliver_weekly_digest(digest_id, articles):
+def _deliver_weekly_digest(digest_id, articles, whats_new):
     """Send the approved email to every subscriber (runs in a background thread)."""
     with app.app_context(), _email_store() as conn:
         task_logger = logging.getLogger(__name__)
         try:
-            messages = [_digest_email_for(s, articles) for s in _digest_recipients(conn)]
+            messages = [_digest_email_for(s, articles, whats_new) for s in _digest_recipients(conn)]
             sent = send_emails(messages)
         except Exception as e:
             task_logger.error(f"Weekly email failed: {e}", exc_info=True)
@@ -2081,8 +2113,11 @@ def get_weekly_digest():
         with _email_store() as conn:
             digest = weekly_email_store.current_digest(conn)
             articles = _digest_week_articles(digest) if digest else []
+            suggested_whats_new = _suggested_whats_new(conn)
             return jsonify({
                 'digest': digest,
+                'whats_new': digest['whats_new'] if digest and digest['whats_new'] is not None else suggested_whats_new,
+                'whats_new_suggested': suggested_whats_new,
                 'this_week': weekly_email_store.get_digest_by_week(conn, _current_week_key()),
                 'articles': articles,
                 'suggested_ids': [a['id'] for a in articles[:DIGEST_MAX_ARTICLES]],
@@ -2119,6 +2154,21 @@ def prepare_weekly_digest_now():
         return jsonify({'error': message}), 409
     return jsonify({'digest': digest, 'message': message})
 
+@app.route('/api/admin/weekly-digest/<int:digest_id>/whats-new', methods=['PUT'])
+@jwt_required()
+def save_weekly_digest_whats_new(digest_id):
+    """Save the admin's edited What's new text while the email waits for approval."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    text = (request.get_json() or {}).get('whats_new')
+    if not isinstance(text, str) or len(text) > WHATS_NEW_MAX_CHARS:
+        return jsonify({'error': f"Please keep What's new under {WHATS_NEW_MAX_CHARS} characters."}), 400
+    with _email_store() as conn:
+        saved = weekly_email_store.update_digest(conn, digest_id, only_if_status='pending', whats_new=text)
+    if not saved:
+        return jsonify({'error': 'This email is no longer waiting for approval.'}), 409
+    return jsonify({'whats_new': text})
+
 def _admin_and_chosen_articles(digest_id):
     """Shared checks for preview/test/send. Returns (admin, digest, articles, error_response)."""
     admin = _current_admin()
@@ -2136,22 +2186,25 @@ def _admin_and_chosen_articles(digest_id):
 @app.route('/api/admin/weekly-digest/<int:digest_id>/preview', methods=['POST'])
 @jwt_required()
 def preview_weekly_digest(digest_id):
-    admin, _, articles, error_response = _admin_and_chosen_articles(digest_id)
+    admin, digest, articles, error_response = _admin_and_chosen_articles(digest_id)
     if error_response:
         return error_response
-    email = build_digest_email(articles, admin.email, f"{APP_URL}/Dashboard", '#', has_account=True)
+    with _email_store() as conn:
+        whats_new = _whats_new_lines(_requested_whats_new(conn, digest))
+    email = build_digest_email(articles, admin.email, f"{APP_URL}/Dashboard", '#', has_account=True, whats_new=whats_new)
     return jsonify({'subject': email['subject'], 'html': email['html']})
 
 @app.route('/api/admin/weekly-digest/<int:digest_id>/test', methods=['POST'])
 @jwt_required()
 def send_weekly_digest_test(digest_id):
     """Send the email, exactly as users will get it, to the admin who clicked."""
-    admin, _, articles, error_response = _admin_and_chosen_articles(digest_id)
+    admin, digest, articles, error_response = _admin_and_chosen_articles(digest_id)
     if error_response:
         return error_response
     with _email_store() as conn:
         subscriber = weekly_email_store.ensure_subscriber(conn, admin.email, logged_in=True)
-    email = _digest_email_for(subscriber, articles)
+        whats_new = _whats_new_lines(_requested_whats_new(conn, digest))
+    email = _digest_email_for(subscriber, articles, whats_new)
     email['subject'] = f"[Test] {email['subject']}"
     if not send_emails([email]):
         return jsonify({'error': "Couldn't send the test email. Ask Ariel to check the email settings."}), 500
@@ -2167,17 +2220,23 @@ def send_weekly_digest(digest_id):
         return jsonify({'error': f"This email was already {digest['status']}."}), 409
 
     with _email_store() as conn:
+        whats_new_text = _requested_whats_new(conn, digest)
+        if len(whats_new_text) > WHATS_NEW_MAX_CHARS:
+            return jsonify({'error': f"Please keep What's new under {WHATS_NEW_MAX_CHARS} characters."}), 400
         # Claim it in one step so a double click or a second admin can't send it twice
         claimed = weekly_email_store.update_digest(
             conn, digest_id, only_if_status='pending',
             status='sending', decided_by=admin.email, decided_at=True, send_error=None,
             articles=[{'id': a['id'], 'title': a['title'], 'journal': a['journal']} for a in articles],
+            whats_new=whats_new_text,
+            # Everything in whats_new.json now counts as announced, so next week suggests only newer updates
+            whats_new_upto=max((e['id'] for e in _whats_new_entries()), default=0),
         )
         recipients_count = len(_digest_recipients(conn))
     if not claimed:
         return jsonify({'error': 'This email is already being sent.'}), 409
 
-    threading.Thread(target=_deliver_weekly_digest, args=(digest_id, articles), daemon=True).start()
+    threading.Thread(target=_deliver_weekly_digest, args=(digest_id, articles, _whats_new_lines(whats_new_text)), daemon=True).start()
     return jsonify({'status': 'sending', 'recipients_count': recipients_count}), 202
 
 @app.route('/api/admin/weekly-digest/<int:digest_id>/skip', methods=['POST'])

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Mail, Loader, Send, SkipForward, FlaskConical, CheckCircle, AlertCircle, Shield, RotateCcw, ExternalLink } from "lucide-react";
 import AddSubscribersCard from "@/components/notifications/AddSubscribersCard";
+import WhatsNewCard from "@/components/notifications/WhatsNewCard";
 
 const formatDate = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
@@ -36,12 +37,17 @@ export default function WeeklyEmail() {
   const [busy, setBusy] = useState(null); // 'send' | 'test' | 'skip' | 'prepare'
   const [message, setMessage] = useState(null); // { type: 'success' | 'error', text }
   const [confirm, setConfirm] = useState(null); // 'send' | 'skip'
+  const [whatsNew, setWhatsNew] = useState("");
+  const [whatsNewEdited, setWhatsNewEdited] = useState(false);
+  const [whatsNewSave, setWhatsNewSave] = useState(null); // 'saving' | 'saved' | 'error'
 
   const load = useCallback(async () => {
     try {
       const result = await localClient.getWeeklyDigest();
       setData(result);
       setSelectedIds(result.suggested_ids || []);
+      setWhatsNew(result.whats_new || "");
+      setWhatsNewEdited(false);
     } catch (e) {
       setMessage({ type: "error", text: e.message || "Couldn't load this week's email." });
     }
@@ -85,7 +91,7 @@ export default function WeeklyEmail() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const result = await localClient.previewWeeklyDigest(digest.id, orderedSelection);
+        const result = await localClient.previewWeeklyDigest(digest.id, orderedSelection, whatsNew);
         if (!cancelled) setPreview(result);
       } catch (e) {
         if (!cancelled) setPreview(null);
@@ -95,7 +101,27 @@ export default function WeeklyEmail() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [digest, orderedSelection]);
+  }, [digest, orderedSelection, whatsNew]);
+
+  // Save What's new edits shortly after typing stops, so they survive leaving the page
+  useEffect(() => {
+    if (!whatsNewEdited || digest?.status !== "pending") return;
+    setWhatsNewSave("saving");
+    const timer = setTimeout(async () => {
+      try {
+        await localClient.saveWeeklyDigestWhatsNew(digest.id, whatsNew);
+        setWhatsNewSave("saved");
+      } catch (e) {
+        setWhatsNewSave("error");
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [whatsNew, whatsNewEdited, digest]);
+
+  const handleWhatsNewChange = (text) => {
+    setWhatsNew(text);
+    setWhatsNewEdited(true);
+  };
 
   const toggle = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -116,9 +142,9 @@ export default function WeeklyEmail() {
   };
 
   const handleSend = () =>
-    run("send", () => localClient.sendWeeklyDigest(digest.id, orderedSelection), (r) => `Sending to ${r.recipients_count} people. This takes about a minute.`);
+    run("send", () => localClient.sendWeeklyDigest(digest.id, orderedSelection, whatsNew), (r) => `Sending to ${r.recipients_count} people. This takes about a minute.`);
   const handleTest = () =>
-    run("test", () => localClient.sendWeeklyDigestTest(digest.id, orderedSelection), (r) => `Test email sent to ${r.sent_to}.`, { reload: false });
+    run("test", () => localClient.sendWeeklyDigestTest(digest.id, orderedSelection, whatsNew), (r) => `Test email sent to ${r.sent_to}.`, { reload: false });
   const handleSkip = () => run("skip", () => localClient.skipWeeklyDigest(digest.id), () => "Skipped. Nothing was sent this week.");
   const handlePrepare = () => run("prepare", () => localClient.prepareWeeklyDigest());
 
@@ -208,74 +234,83 @@ export default function WeeklyEmail() {
 
       {canChoose && (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <Card className="lg:col-span-3">
-            <CardHeader>
-              <CardTitle className="text-lg">This week's articles ({articles.length})</CardTitle>
-              <CardDescription>
-                Tick up to {maxArticles}. The suggested ones follow the dashboard order: key studies first, then by score.
-                Case reports and articles hidden from the dashboard are left out.
-              </CardDescription>
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-sm font-medium text-slate-700">
-                  {orderedSelection.length} of {maxArticles} selected
-                </span>
-                {!isSuggestedSelection && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedIds(data.suggested_ids || [])}
-                    className="text-sm text-blue-700 hover:underline underline-offset-4"
-                  >
-                    Back to suggested
-                  </button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {articles.map((article) => {
-                const checked = selectedIds.includes(article.id);
-                const disabled = !checked && selectionFull;
-                const suggested = (data.suggested_ids || []).includes(article.id);
-                return (
-                  <label
-                    key={article.id}
-                    className={`flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${
-                      checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
-                    } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:border-slate-300"}`}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      disabled={disabled}
-                      onCheckedChange={() => toggle(article.id)}
-                      className="mt-1"
-                      aria-label={article.title}
-                    />
-                    <span className="w-9 shrink-0 text-center text-sm font-bold text-slate-700 bg-slate-100 rounded px-1 py-0.5">
-                      {typeof article.ranking_score === "number" ? article.ranking_score : "–"}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-slate-900 leading-snug">{article.title}</span>
-                      <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span>{article.journal}</span>
-                        {suggested && <span className="rounded bg-blue-100 px-1.5 py-0.5 font-semibold text-blue-700">Suggested</span>}
-                        {article.is_key_study && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Key study</span>}
-                        {article.url && (
-                          <a
-                            href={article.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-0.5 text-blue-700 hover:underline"
-                          >
-                            Open <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
+          <div className="lg:col-span-3 space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">This week's articles ({articles.length})</CardTitle>
+                <CardDescription>
+                  Tick up to {maxArticles}. The suggested ones follow the dashboard order: key studies first, then by score.
+                  Case reports and articles hidden from the dashboard are left out.
+                </CardDescription>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-sm font-medium text-slate-700">
+                    {orderedSelection.length} of {maxArticles} selected
+                  </span>
+                  {!isSuggestedSelection && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(data.suggested_ids || [])}
+                      className="text-sm text-blue-700 hover:underline underline-offset-4"
+                    >
+                      Back to suggested
+                    </button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {articles.map((article) => {
+                  const checked = selectedIds.includes(article.id);
+                  const disabled = !checked && selectionFull;
+                  const suggested = (data.suggested_ids || []).includes(article.id);
+                  return (
+                    <label
+                      key={article.id}
+                      className={`flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${
+                        checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
+                      } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:border-slate-300"}`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        disabled={disabled}
+                        onCheckedChange={() => toggle(article.id)}
+                        className="mt-1"
+                        aria-label={article.title}
+                      />
+                      <span className="w-9 shrink-0 text-center text-sm font-bold text-slate-700 bg-slate-100 rounded px-1 py-0.5">
+                        {typeof article.ranking_score === "number" ? article.ranking_score : "–"}
                       </span>
-                    </span>
-                  </label>
-                );
-              })}
-            </CardContent>
-          </Card>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-slate-900 leading-snug">{article.title}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <span>{article.journal}</span>
+                          {suggested && <span className="rounded bg-blue-100 px-1.5 py-0.5 font-semibold text-blue-700">Suggested</span>}
+                          {article.is_key_study && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Key study</span>}
+                          {article.url && (
+                            <a
+                              href={article.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-blue-700 hover:underline"
+                            >
+                              Open <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            <WhatsNewCard
+              value={whatsNew}
+              suggested={data.whats_new_suggested}
+              onChange={handleWhatsNewChange}
+              saveState={whatsNewSave}
+            />
+          </div>
 
           <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-6 lg:self-start">
             <Card>

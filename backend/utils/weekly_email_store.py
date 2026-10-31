@@ -39,6 +39,12 @@ def init_tables(conn: sqlite3.Connection) -> None:
             send_error TEXT
         );
     """)
+    # Added after the table first went live: the "What's new" section
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(weekly_emails)")}
+    if 'whats_new' not in columns:
+        conn.execute("ALTER TABLE weekly_emails ADD COLUMN whats_new TEXT")  # admin's edited text; NULL = not edited yet
+    if 'whats_new_upto' not in columns:
+        conn.execute("ALTER TABLE weekly_emails ADD COLUMN whats_new_upto INTEGER")  # newest whats_new.json id announced
     conn.commit()
 
 
@@ -186,6 +192,12 @@ def update_digest(conn: sqlite3.Connection, digest_id: int, only_if_status: Opti
     return changed
 
 
+def last_announced_whats_new(conn: sqlite3.Connection) -> int:
+    """The newest whats_new.json entry already announced in a sent email (0 if none)."""
+    row = conn.execute("SELECT MAX(whats_new_upto) FROM weekly_emails WHERE status = 'sent'").fetchone()
+    return row[0] or 0
+
+
 def expire_other_pending(conn: sqlite3.Connection, week_key: str) -> None:
     """Only the newest scan's email can be approved."""
     conn.execute(
@@ -208,4 +220,5 @@ def _digest_dict(row) -> Optional[Dict]:
         'decided_at': row['decided_at'] + 'Z' if row['decided_at'] else None,
         'recipients_count': row['recipients_count'],
         'send_error': row['send_error'],
+        'whats_new': row['whats_new'],
     }

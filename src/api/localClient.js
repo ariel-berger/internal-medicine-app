@@ -268,16 +268,20 @@ class LocalAPIClient {
     return this.post('/admin/weekly-digest/prepare', {});
   }
 
-  async previewWeeklyDigest(digestId, articleIds) {
-    return this.post(`/admin/weekly-digest/${digestId}/preview`, { article_ids: articleIds });
+  async previewWeeklyDigest(digestId, articleIds, whatsNew) {
+    return this.post(`/admin/weekly-digest/${digestId}/preview`, { article_ids: articleIds, whats_new: whatsNew });
   }
 
-  async sendWeeklyDigestTest(digestId, articleIds) {
-    return this.post(`/admin/weekly-digest/${digestId}/test`, { article_ids: articleIds });
+  async sendWeeklyDigestTest(digestId, articleIds, whatsNew) {
+    return this.post(`/admin/weekly-digest/${digestId}/test`, { article_ids: articleIds, whats_new: whatsNew });
   }
 
-  async sendWeeklyDigest(digestId, articleIds) {
-    return this.post(`/admin/weekly-digest/${digestId}/send`, { article_ids: articleIds });
+  async sendWeeklyDigest(digestId, articleIds, whatsNew) {
+    return this.post(`/admin/weekly-digest/${digestId}/send`, { article_ids: articleIds, whats_new: whatsNew });
+  }
+
+  async saveWeeklyDigestWhatsNew(digestId, whatsNew) {
+    return this.put(`/admin/weekly-digest/${digestId}/whats-new`, { whats_new: whatsNew });
   }
 
   async skipWeeklyDigest(digestId) {

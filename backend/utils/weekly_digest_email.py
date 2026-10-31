@@ -62,15 +62,46 @@ def _numbered_articles(articles: List[Dict]) -> str:
     return rows
 
 
+def _update_html(update: str) -> str:
+    """A "Title: details" update gets a bold title."""
+    lead, sep, rest = update.partition(': ')
+    if sep and 0 < len(lead) <= 40:
+        return f"<strong>{escape(lead)}:</strong> {escape(rest)}"
+    return escape(update)
+
+
+def _whats_new_section(updates: List[str], heading: str = "What's new on Internal Nerds") -> str:
+    if not updates:
+        return ""
+    items = "".join(f"""
+              <tr>
+                <td valign="top" style="width:18px;font-size:15px;line-height:1.5;color:#1d4ed8;">&bull;</td>
+                <td valign="top" style="padding-bottom:8px;font-size:15px;line-height:1.5;color:#334155;">{_update_html(u)}</td>
+              </tr>""" for u in updates)
+    return f"""
+          <tr><td style="padding:0 28px 24px;">
+            <h2 style="margin:0 0 10px;font-size:16px;color:#0f172a;border-top:1px solid #e2e8f0;padding-top:20px;">{escape(heading)}</h2>
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">{items}
+            </table>
+          </td></tr>"""
+
+
+def _whats_new_text(updates: List[str], heading: str = "What's new on Internal Nerds") -> str:
+    if not updates:
+        return ""
+    return f"{heading}:\n" + "".join(f"- {u}\n" for u in updates) + "\n"
+
+
 def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url: str, unsubscribe_url: str,
-                       has_account: bool = True) -> Dict:
-    """The email subscribers receive: top articles (title + journal) and a link to the dashboard.
-    has_account=False is for addresses an admin added to the list, who may never have logged in."""
+                       has_account: bool = True, whats_new: List[str] = None) -> Dict:
+    """The email subscribers receive: top articles (title + journal), a link to the dashboard, and optional
+    "What's new" updates. has_account=False is for addresses an admin added, who may never have logged in."""
     count = len(articles)
     title = f"This week's top {count} articles" if count != 1 else "This week's top article"
     intro = "Here's what to read first from this week's update. Summaries and links are on the dashboard."
 
     rows = _header("INTERNAL NERDS", title, intro) + _numbered_articles(articles) + _button(dashboard_url, "Open the dashboard")
+    rows += _whats_new_section(whats_new)
 
     if has_account:
         why = (f"You're getting this because you have an Internal Nerds account. It goes automatically to your "
@@ -91,6 +122,7 @@ def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url
         text += f"{i}. {article.get('title') or 'Untitled'}\n   {article.get('journal') or ''}\n\n"
     text += (
         f"Open the dashboard: {dashboard_url}\n\n"
+        f"{_whats_new_text(whats_new)}"
         f"---\n{why}\n"
         f"Unsubscribe with one click: {unsubscribe_url}\n"
         f"{settings[0].upper()}{settings[1:]}\n"
@@ -99,8 +131,10 @@ def build_digest_email(articles: List[Dict], recipient_email: str, dashboard_url
     return {'subject': title, 'html': _page(rows, footer), 'text': text}
 
 
-def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipients_count: int, review_url: str) -> Dict:
-    """The email admins get after the Saturday scan: the suggested top 3 plus every article from the week."""
+def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipients_count: int, review_url: str,
+                         whats_new: List[str] = None) -> Dict:
+    """The approval request after the Saturday scan: the suggested top 3, suggested "What's new" updates,
+    and every article from the week."""
     subject = f"Please approve: this week's top {len(suggested)} email to {recipients_count} people"
     intro = (
         f"Nothing is sent until an admin approves. Once approved, it goes to <strong>{recipients_count} people</strong> "
@@ -112,6 +146,7 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
     rows += """
           <tr><td style="padding:0 28px;"><h2 style="margin:0;font-size:16px;color:#0f172a;border-top:1px solid #e2e8f0;padding-top:20px;">Suggested top 3 (what users will see)</h2></td></tr>"""
     rows += _numbered_articles(suggested)
+    rows += _whats_new_section(whats_new, "Suggested \"What's new\" (you can edit it on the review page)")
 
     suggested_ids = {a['id'] for a in suggested}
     table_rows = ""
@@ -154,6 +189,7 @@ def build_approval_email(suggested: List[Dict], all_articles: List[Dict], recipi
     )
     for i, article in enumerate(suggested, 1):
         text += f"{i}. {article.get('title') or 'Untitled'} ({article.get('journal') or ''})\n"
+    text += "\n" + _whats_new_text(whats_new, "Suggested \"What's new\" (you can edit it on the review page)")
     text += f"\nAll articles from this week ({len(all_articles)}):\n"
     for article in all_articles:
         score = article.get('ranking_score')
