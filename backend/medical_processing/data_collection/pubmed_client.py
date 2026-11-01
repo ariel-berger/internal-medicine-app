@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import time
 import logging
+import re
 from ..config import PUBMED_SEARCH_URL, PUBMED_FETCH_URL, ARTICLES_PER_BATCH, DAYS_TO_COLLECT, JOURNALS
 
 logging.basicConfig(level=logging.INFO)
@@ -206,7 +207,9 @@ class PubMedClient:
                 ]
                 
                 for term in filtered_terms:
-                    if term in title_lower:
+                    # The term has to end where the title's word ends (a plural still counts), so
+                    # 'gene' doesn't catch 'general' or 'heterogeneity' and 'sex' doesn't catch 'sexual'
+                    if re.search(re.escape(term) + r'(?:e?s)?\b', title_lower):
                         logger.info(f"Skipping article with '{term}' in title: PMID {pmid}")
                         self.title_filtered += 1
                         return None
