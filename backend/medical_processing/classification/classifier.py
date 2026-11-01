@@ -334,7 +334,7 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
                         response += '}' * missing_braces
             
             # Parse JSON
-            result = json.loads(response)
+            result = self._final_json_answer(response, 'is_relevant')
 
             # Coerce field types
             if 'is_relevant' in result and isinstance(result['is_relevant'], str):
@@ -364,7 +364,25 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
             logger.error(f"Error parsing filtering response: {e}")
             logger.error(f"Response was: {response}")
             return self._get_default_filtering_response()
-    
+
+    def _final_json_answer(self, response: str, required_key: str) -> Dict:
+        """Parse the JSON answer at the start of `response`. The model sometimes follows its answer with
+        "Correction: ..." and a second, final answer, so a later complete object that has `required_key`
+        replaces the first one (inner objects of a cut-off second answer don't have it)."""
+        decoder = json.JSONDecoder()
+        result, end = decoder.raw_decode(response)
+        next_start = response.find('{', end)
+        while next_start != -1:
+            try:
+                candidate, end = decoder.raw_decode(response, next_start)
+            except json.JSONDecodeError:
+                next_start = response.find('{', next_start + 1)
+                continue
+            if isinstance(candidate, dict) and required_key in candidate:
+                result = candidate
+            next_start = response.find('{', end)
+        return result
+
     def _get_default_filtering_response(self) -> Dict:
         """Get default filtering response structure for error cases."""
         return {
@@ -401,8 +419,8 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
                         response += '}' * missing_braces
             
             # Parse JSON
-            result = json.loads(response)
-            
+            result = self._final_json_answer(response, 'ranking_breakdown')
+
             # Validate required fields - medical_category is optional but preferred
             # If missing, default to 'Other' instead of failing
             if 'medical_category' not in result:
