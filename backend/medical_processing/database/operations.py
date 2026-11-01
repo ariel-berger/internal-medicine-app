@@ -535,6 +535,21 @@ class ArticleDatabase:
             logger.error(f"Error getting latest created_at: {e}")
             return None
 
+    def get_existing_pmids(self, pmids: List[str]) -> set:
+        """Return the PMIDs from `pmids` that are already in the database."""
+        existing = set()
+        try:
+            cursor = self.conn.cursor()
+            # In chunks, to stay under SQLite's limit on query parameters
+            for i in range(0, len(pmids), 500):
+                chunk = pmids[i:i + 500]
+                placeholders = ','.join('?' * len(chunk))
+                cursor.execute(f"SELECT pmid FROM articles WHERE pmid IN ({placeholders})", chunk)
+                existing.update(str(row[0]) for row in cursor.fetchall())
+        except sqlite3.Error as e:
+            logger.error(f"Error checking existing PMIDs: {e}")
+        return existing
+
 def batch_insert_articles(articles: List[Dict]) -> int:
     """Insert multiple articles in batch with enhanced classification data."""
     inserted_count = 0

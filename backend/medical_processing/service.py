@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 from .data_collection.pubmed_client import PubMedClient
 # Lazy import classification to avoid hard dependency at startup on optional AI SDKs
-from .database.operations import batch_insert_articles
+from .database.operations import ArticleDatabase, batch_insert_articles
 from .database.schema import (
     create_database, 
     migrate_database, 
@@ -58,18 +58,27 @@ class MedicalArticlesService:
             
             # Search for articles in the specified date range
             pmids = client.search_articles_custom_date(journal_names, start_date, end_date)
-            
+
+            # PubMed's publication date covers both the online (epub) and the print date, so an article
+            # matches once when it comes out online and again when it's printed. Skip ones we already have,
+            # so they aren't scored again (and don't lose being hidden from the dashboard).
+            with ArticleDatabase() as db:
+                existing_pmids = db.get_existing_pmids(pmids)
+            pmids = [pmid for pmid in pmids if pmid not in existing_pmids]
+            if existing_pmids:
+                logger.info(f"Skipping {len(existing_pmids)} articles already in the database")
+
             if not pmids:
-                logger.warning(f"No articles found for date range {start_date} to {end_date}")
+                logger.warning(f"No new articles found for date range {start_date} to {end_date}")
                 return {
                     'articles': [],
-                    'filtering_stats': client.get_filtering_stats(),
+                    'filtering_stats': {**client.get_filtering_stats(), 'already_in_app': len(existing_pmids)},
                     'success': True
                 }
-            
+
             # Fetch article details
             articles = client.fetch_article_details(pmids)
-            filtering_stats = client.get_filtering_stats()
+            filtering_stats = {**client.get_filtering_stats(), 'already_in_app': len(existing_pmids)}
             
             logger.info(f"Successfully collected {len(articles)} articles for date range {start_date} to {end_date}")
             

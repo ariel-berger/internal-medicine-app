@@ -119,6 +119,8 @@ def send_summary_email(
         filtering_html = ""
         if filtering_stats:
             filtering_html = "<ul style='list-style: none; padding: 0; margin: 10px 0;'>"
+            if filtering_stats.get('already_in_app', 0) > 0:
+                filtering_html += f"<li style='margin: 5px 0;'>Already in the App (Skipped): <strong>{filtering_stats.get('already_in_app', 0)}</strong></li>"
             if filtering_stats.get('ahead_of_print_filtered', 0) > 0:
                 filtering_html += f"<li style='margin: 5px 0;'>Ahead of Print Filtered: <strong>{filtering_stats.get('ahead_of_print_filtered', 0)}</strong></li>"
             if filtering_stats.get('non_research_filtered', 0) > 0:
@@ -233,6 +235,8 @@ Quality Metrics:
             
             if filtering_stats:
                 text_body += "\nFiltering Statistics:\n"
+                if filtering_stats.get('already_in_app', 0) > 0:
+                    text_body += f"- Already in the App (Skipped): {filtering_stats.get('already_in_app', 0)}\n"
                 if filtering_stats.get('ahead_of_print_filtered', 0) > 0:
                     text_body += f"- Ahead of Print Filtered: {filtering_stats.get('ahead_of_print_filtered', 0)}\n"
                 if filtering_stats.get('non_research_filtered', 0) > 0:

@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from medical_processing.data_collection.pubmed_client import PubMedClient
 from medical_processing.classification.classifier import classify_articles_batch
-from medical_processing.database.operations import batch_insert_articles
+from medical_processing.database.operations import ArticleDatabase, batch_insert_articles
 from medical_processing.database.schema import create_database, migrate_database
 from medical_processing.config import CLAUDE_MODEL, GEMINI_MODEL
 from config import JOURNALS
@@ -41,19 +41,26 @@ def collect_articles_by_date_range(start_date: str, end_date: str, email: str = 
     
     # Search for articles in the specified date range
     pmids = client.search_articles_custom_date(journal_names, start_date, end_date)
-    
+
+    # PubMed's publication date covers both the online and the print date, so skip articles we already have
+    with ArticleDatabase() as db:
+        existing_pmids = db.get_existing_pmids(pmids)
+    pmids = [pmid for pmid in pmids if pmid not in existing_pmids]
+    if existing_pmids:
+        logger.info(f"Skipping {len(existing_pmids)} articles already in the database")
+
     if not pmids:
-        logger.warning(f"No articles found for date range {start_date} to {end_date}")
+        logger.warning(f"No new articles found for date range {start_date} to {end_date}")
         return {
             'articles': [],
-            'filtering_stats': client.get_filtering_stats()
+            'filtering_stats': {**client.get_filtering_stats(), 'already_in_app': len(existing_pmids)}
         }
-    
+
     # Fetch article details
     articles = client.fetch_article_details(pmids)
-    
+
     # Get filtering statistics
-    filtering_stats = client.get_filtering_stats()
+    filtering_stats = {**client.get_filtering_stats(), 'already_in_app': len(existing_pmids)}
     
     logger.info(f"Successfully collected {len(articles)} articles for date range {start_date} to {end_date}")
     if filtering_stats['ahead_of_print_filtered'] > 0:
