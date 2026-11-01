@@ -28,5 +28,10 @@
     "id": 6,
     "date": "2026-11-01",
     "text": "Steadier scores: Points for study size (500+ participants) and for top journals (NEJM, Lancet, JAMA and others with an impact factor of 25 or more) are now given by fixed rules, so the same kind of article always gets the same points. Fewer relevant articles are wrongly left out because of a word in their title."
+  },
+  {
+    "id": 7,
+    "date": "2026-11-01",
+    "text": "Newest first in My Library: Your Want to Read and Read lists now show the most recently published articles at the top, and a new \"Published\" filter lets you narrow them to the past week, month, 3 months or year. Every article you've saved now shows up, including older ones that were sometimes missing."
   }
 ]

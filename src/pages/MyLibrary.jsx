@@ -7,10 +7,27 @@ import { MedicalArticle } from '@/api/medicalArticles';
 import { getStatusMap as getArticleStatusMap, setStatus as setArticleStatus } from '@/api/articleStatuses';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Book, Bookmark, Search, CheckCircle, Stethoscope, BookOpen } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Book, Bookmark, Search, CheckCircle, Stethoscope, BookOpen, CalendarDays } from 'lucide-react';
 import StudyGrid from '../components/dashboard/StudyGrid';
 import MedicalArticleGrid from '../components/dashboard/MedicalArticleGrid';
-import { subDays, isAfter } from 'date-fns';
+import { subDays, subMonths, subYears, isAfter } from 'date-fns';
+
+// Time filter on publication date
+const PUBLISHED_WITHIN = [
+  { value: 'week', label: 'Past week', since: () => subDays(new Date(), 7) },
+  { value: 'month', label: 'Past month', since: () => subMonths(new Date(), 1) },
+  { value: '3months', label: 'Past 3 months', since: () => subMonths(new Date(), 3) },
+  { value: 'year', label: 'Past year', since: () => subYears(new Date(), 1) },
+  { value: 'all', label: 'Any time', since: () => null },
+];
+
+// Publication time in ms; items without a valid date count as oldest
+const publishedTime = (item) => {
+  const time = item.publication_date ? Date.parse(item.publication_date) : NaN;
+  return Number.isNaN(time) ? 0 : time;
+};
+const newestFirst = (a, b) => publishedTime(b) - publishedTime(a);
 
 export default function MyLibrary() {
   const [user, setUser] = useState(null);
@@ -22,6 +39,7 @@ export default function MyLibrary() {
   const [isLoading, setIsLoading] = useState(true);
   const [personalStats, setPersonalStats] = useState({ readThisMonth: 0, topSpecialty: '' });
   const [activeTab, setActiveTab] = useState(null);
+  const [publishedWithin, setPublishedWithin] = useState('all');
 
   useEffect(() => {
     loadLibraryData();
@@ -36,7 +54,8 @@ export default function MyLibrary() {
       const [userStatuses, allStudies, relevantArticles] = await Promise.all([
         UserStudyStatus.filter({ created_by: currentUser.email }),
         Study.list('-publication_date'),
-        MedicalArticle.getRelevantArticles({ limit: 200, sort: 'ranking_score' })
+        // Every relevant article, so saved ones outside the top scores aren't left out
+        MedicalArticle.getAllRelevantArticles({ sort: 'publication_date' })
       ]);
       
       const statusMap = new Map(userStatuses.map(s => [s.study_id, s]));
@@ -81,13 +100,7 @@ export default function MyLibrary() {
         topSpecialty: topSpecialty.replace(/_/g, ' ') 
       });
 
-      libraryStudies.sort((a, b) => {
-        const dateA = a.publication_date ? new Date(a.publication_date) : null;
-        const dateB = b.publication_date ? new Date(b.publication_date) : null;
-        if (dateB === null) return -1;
-        if (dateA === null) return 1;
-        return dateB.getTime() - dateA.getTime();
-      });
+      libraryStudies.sort(newestFirst);
 
       setStatuses(statusMap);
       setStudies(libraryStudies);
@@ -266,7 +279,14 @@ export default function MyLibrary() {
     );
   };
 
+  const publishedSince = useMemo(() => {
+    const since = PUBLISHED_WITHIN.find(o => o.value === publishedWithin)?.since();
+    return since ? since.getTime() : null;
+  }, [publishedWithin]);
+  const inTimeRange = (item) => publishedSince === null || publishedTime(item) >= publishedSince;
+
   const filteredStudies = studies.filter(study => {
+    if (!inTimeRange(study)) return false;
     if (!searchTerm) return true;
     const lowercasedTerm = searchTerm.toLowerCase();
     return (
@@ -286,10 +306,13 @@ export default function MyLibrary() {
       (a.title && a.title.toLowerCase().includes(term)) ||
       (a.journal && a.journal.toLowerCase().includes(term));
 
-    const want = articles.filter(a => articleStatuses.get(a.id)?.status === 'want_to_read' && matchesSearch(a));
-    const readA = articles.filter(a => articleStatuses.get(a.id)?.status === 'read' && matchesSearch(a));
+    const onShelf = (a, status) =>
+      articleStatuses.get(a.id)?.status === status && inTimeRange(a) && matchesSearch(a);
+
+    const want = articles.filter(a => onShelf(a, 'want_to_read')).sort(newestFirst);
+    const readA = articles.filter(a => onShelf(a, 'read')).sort(newestFirst);
     return [want, readA];
-  }, [articles, articleStatuses, searchTerm]);
+  }, [articles, articleStatuses, searchTerm, publishedSince]);
 
   const wantCount = wantToReadArticles.length + wantToReadStudies.length;
   const readCount = readArticles.length + readStudies.length;
@@ -300,7 +323,11 @@ export default function MyLibrary() {
     if (!isLoading && shelfArticles.length === 0 && shelfStudies.length === 0) {
       return (
         <div className="professional-card p-8 text-center text-slate-600">
-          {searchTerm ? 'Nothing here matches your search.' : emptyText}
+          {searchTerm
+            ? 'Nothing here matches your search.'
+            : publishedSince !== null
+              ? 'Nothing here was published in this time range.'
+              : emptyText}
         </div>
       );
     }
@@ -353,14 +380,31 @@ export default function MyLibrary() {
             )}
         </div>
         
-        <div className="relative mb-6 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input 
-            placeholder="Search your library..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 professional-card"
-          />
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search your library..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 professional-card"
+            />
+          </div>
+          <Select value={publishedWithin} onValueChange={setPublishedWithin}>
+            <SelectTrigger className="professional-card w-full sm:w-60" aria-label="Published">
+              {/* !flex: the trigger clamps its direct spans to one line, which would stack these */}
+              <span className="!flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 shrink-0 text-slate-400" />
+                <span className="text-slate-500">Published:</span>
+                <SelectValue />
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {PUBLISHED_WITHIN.map(option => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Tabs value={currentTab} onValueChange={setActiveTab} className="w-full">
