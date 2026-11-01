@@ -11,6 +11,19 @@ GEMINI_MODEL = "gemini-2.5-pro"
 
 # Scoring rules the app applies itself (the AI reads the facts from the abstract, the app gives the points)
 STUDY_SIZE_CUTOFF = 500  # participants needed for the +1 study-size point
+# Journals that earn the +1 top-journal point: impact factor 25 or more, the same journals that get the
+# "Major Journal" badge. Names as PubMed gives them (compared ignoring case).
+TOP_JOURNALS = [
+    "The New England journal of medicine",
+    "Lancet (London, England)",
+    "JAMA",
+    "BMJ (Clinical research ed.)",
+    "Annals of internal medicine",
+    "European heart journal",
+    "Circulation",
+    "American journal of respiratory and critical care medicine",
+    "Annals of the rheumatic diseases",
+]
 
 # Journal configuration - using PubMed abbreviated names
 JOURNALS = {

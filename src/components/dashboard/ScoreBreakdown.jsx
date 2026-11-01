@@ -8,7 +8,7 @@ const SCORE_PARTS = [
   { key: "prevalence_points", label: "Disease prevalence", meaning: { 2: "very common (over 10%)", 1: "medium (1–10%)", 0: "not scored", "-1": "rare (under 1%)" } },
   { key: "hospitalization_points", label: "Acute or inpatient relevance", meaning: { 2: "acute or hospitalized setting", 0: "outpatient or chronic care" } },
   { key: "clinical_outcome_points", label: "Clinical primary outcome", meaning: { 1: "clinical events (death, symptoms, admissions…)", 0: "lab, imaging or surrogate outcome" } },
-  { key: "impact_factor_points", label: "Journal impact factor", meaning: { 1: "above 10", 0: "10 or below, or unknown" } },
+  { key: "impact_factor_points", label: "Top journal", meaning: { 1: "impact factor 25 or more", 0: "not on the top-journal list" } },
   // Saved in the temporality_points column, the old name of this slot
   { key: "temporality_points", label: "Study size", meaning: { 1: "500 or more participants", 0: "under 500, or not stated" } },
 ];
