@@ -4,7 +4,7 @@ import json
 import os
 import time
 from dotenv import load_dotenv
-from medical_processing.config import MEDICAL_CATEGORIES, CLAUDE_MODEL, GEMINI_MODEL
+from medical_processing.config import MEDICAL_CATEGORIES, CLAUDE_MODEL, GEMINI_MODEL, STUDY_SIZE_CUTOFF
 import anthropic
 import google.generativeai as genai
 
@@ -209,7 +209,6 @@ Journal: {journal_display}
         "hospitalization_points": "number (0-2)",
         "clinical_outcome_points": "number (0-1)",
         "impact_factor_points": "number (0-1)",
-        "temporality_points": "number (-1 to 1)",
         "prevention_penalty_points": "number (0 or -1)",
         "biologic_penalty_points": "number (0 or -1)",
         "screening_penalty_points": "number (0 or -2)",
@@ -256,10 +255,6 @@ Calculate ranking_score (from -8 points to 11 points) based on the following cri
 - 1 point: Journal impact factor > 10 (high-impact journals like NEJM, Lancet, JAMA, etc.)
 - 0 points: Journal impact factor ≤ 10 or unknown
 
-*Size of cohort (0-1 point)*
-- 1 point: the study cohort is equal or above 500 participants 
-- 0 points: the study cohort is less than 500 participants
-
 *Prevention/Prophylaxis Penalty (0 or -1 points):*
 - -1 point: Primary focus on prevention or prophylaxis of disease
 - 0 points: Not primarily focused on prevention/prophylaxis
@@ -281,13 +276,13 @@ Calculate ranking_score (from -8 points to 11 points) based on the following cri
 - 0 points: Not a subanalysis
 
 *Total Score Calculation:*
-ranking_score = focus_points + type_points + prevalence_points + hospitalization_points + clinical_outcome_points + impact_factor_points + temporality_points + prevention_penalty_points + biologic_penalty_points + screening_penalty_points + scores_penalty_points + subanalysis_penalty_points
+ranking_score = focus_points + type_points + prevalence_points + hospitalization_points + clinical_outcome_points + impact_factor_points + prevention_penalty_points + biologic_penalty_points + screening_penalty_points + scores_penalty_points + subanalysis_penalty_points
 
 **Step 3: Summary and Tagging**
 * clinical_bottom_line: Write a 2-3 sentence, evidence-based summary for a busy doctor. Base this ONLY on conclusions explicitly stated in the abstract. Include: (1) Study design and key participant characteristics, (2) Main outcome measured, (3) Key findings/conclusions from the abstract. Do NOT extrapolate, infer, or add clinical recommendations not explicitly stated in the abstract. If important inclusion/exclusion criteria are mentioned, include them briefly.
   Drug class (the ONLY exception to the abstract-only rule): when the study tests a drug, add ONE short drug class name in parentheses right after the drug is first named, even if the abstract does not mention it. Use the common class name only, 1-3 words, with no extra mechanism detail, e.g. "furosemide (a loop diuretic)", "apixaban (a factor Xa inhibitor)", "empagliflozin (an SGLT2 inhibitor)". Apply this only to the drug(s) being studied and any active comparator, not to placebo, background therapy, or other drugs merely mentioned. Use only well-established pharmacology; if you are not sure of an investigational drug's class, leave it out. Skip it entirely for non-drug interventions.
 * tags: Generate an array of relevant tags. Include "practice-changing", "guideline", or "popular-article" if applicable based on your analysis.
-* participants: Analyze the provided abstract and other text to find the number of participants in the study. If this information is not mentioned in the text, use null.
+* participants: Analyze the provided abstract and other text to find the number of participants in the study. For a meta-analysis or pooled analysis, use the total number of patients across the included studies. If this information is not mentioned in the text, use null.
 
 *Example Output:*
 {{
@@ -303,7 +298,6 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
         "hospitalization_points": 2,
         "clinical_outcome_points": 1,
         "impact_factor_points": 1,
-        "temporality_points": 1,
         "prevention_penalty_points": 0,
         "biologic_penalty_points": 0,
         "screening_penalty_points": 0,
@@ -541,20 +535,26 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
             'subanalysis_penalty_points': 0
         }
     
-    def _calculate_rule_based_scores(self, article_data: Dict) -> Dict:
-        """Calculate rule-based scoring points for relevant articles only."""
+    def _calculate_rule_based_scores(self, article_data: Dict, participants=None) -> Dict:
+        """Calculate rule-based scoring points for relevant articles only.
+        `participants` is the count the AI read from the abstract (None when it isn't given)."""
         title = article_data.get('title', '').lower()
         journal_name = article_data.get('journal', '').lower()
-        
+
         neurology_penalty_points = 0
-        
+
         # Rule 1: -4 points if the study is from the journal "Neurology"
         if journal_name == 'neurology':
             neurology_penalty_points = -4
             logger.info(f"Neurology penalty applied: {journal_name}")
-        
+
+        # Rule 2: +1 point for a study with STUDY_SIZE_CUTOFF participants or more (pooled total for
+        # meta-analyses); no point when the abstract doesn't give a count
+        size_points = 1 if participants is not None and participants >= STUDY_SIZE_CUTOFF else 0
+
         return {
-            'neurology_penalty_points': neurology_penalty_points
+            'neurology_penalty_points': neurology_penalty_points,
+            'size_points': size_points
         }
     
     def filter_article(self, article_data: Dict) -> Dict:
@@ -640,16 +640,19 @@ ranking_score = focus_points + type_points + prevalence_points + hospitalization
         # Step 2: If relevant, perform full classification
         classification_result = self.classify_relevant_article(article_data)
         
-        # Step 3: Apply rule-based scoring for relevant articles (title-based, journal-based)
-        rule_based_scores = self._calculate_rule_based_scores(article_data)
-        
+        # Step 3: Apply rule-based scoring for relevant articles (journal-based, study size)
+        rule_based_scores = self._calculate_rule_based_scores(article_data, classification_result.get('participants'))
+
         # Combine filtering, classification, and rule-based results
         result = classification_result.copy()
         result.update(filtering_result)
-        
+
         # Extract AI-generated penalty/bonus points from ranking_breakdown
         ranking_breakdown = result.get('ranking_breakdown', {})
-        
+
+        # The study-size point is saved in the temporality_points column, the old name of this slot
+        ranking_breakdown['temporality_points'] = rule_based_scores['size_points']
+
         # Extract all penalty and bonus points (both AI-generated and rule-based)
         prevention_penalty_points = ranking_breakdown.get('prevention_penalty_points', 0)
         biologic_penalty_points = ranking_breakdown.get('biologic_penalty_points', 0)

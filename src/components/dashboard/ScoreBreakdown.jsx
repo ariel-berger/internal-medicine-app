@@ -9,7 +9,8 @@ const SCORE_PARTS = [
   { key: "hospitalization_points", label: "Acute or inpatient relevance", meaning: { 2: "acute or hospitalized setting", 0: "outpatient or chronic care" } },
   { key: "clinical_outcome_points", label: "Clinical primary outcome", meaning: { 1: "clinical events (death, symptoms, admissions…)", 0: "lab, imaging or surrogate outcome" } },
   { key: "impact_factor_points", label: "Journal impact factor", meaning: { 1: "above 10", 0: "10 or below, or unknown" } },
-  { key: "temporality_points", label: "Temporality", meaning: {} },
+  // Saved in the temporality_points column, the old name of this slot
+  { key: "temporality_points", label: "Study size", meaning: { 1: "500 or more participants", 0: "under 500, or not stated" } },
 ];
 
 // Penalties and older rules are only listed when they changed the score. Articles scored before the

@@ -9,6 +9,9 @@ DATABASE_PATH = "medical_articles.db"
 CLAUDE_MODEL = "claude-sonnet-5-5"
 GEMINI_MODEL = "gemini-2.5-pro"
 
+# Scoring rules the app applies itself (the AI reads the facts from the abstract, the app gives the points)
+STUDY_SIZE_CUTOFF = 500  # participants needed for the +1 study-size point
+
 # Journal configuration - using PubMed abbreviated names
 JOURNALS = {
     "NEJM": "N Engl J Med",
