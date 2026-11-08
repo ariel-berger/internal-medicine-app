@@ -4,7 +4,7 @@ import React from "react";
 // backend/medical_processing/classification/classifier.py.
 const SCORE_PARTS = [
   { key: "focus_points", label: "Focus", meaning: { 2: "treatment or intervention", 1: "diagnostic test or screening", 0: "other focus" } },
-  { key: "type_points", label: "Study type", meaning: { 2: "randomized controlled trial", 1: "meta-analysis or systematic review", 0: "other study type" } },
+  { key: "type_points", label: "Study type", meaning: { 2: "randomized controlled trial", 1: "meta-analysis, systematic review, or open-label extension of an RCT", 0: "other study type" } },
   { key: "prevalence_points", label: "Disease prevalence", meaning: { 2: "very common (over 10%)", 1: "medium (1–10%)", 0: "not scored", "-1": "rare (under 1%)" } },
   { key: "hospitalization_points", label: "Acute or inpatient relevance", meaning: { 2: "acute or hospitalized setting", 0: "outpatient or chronic care" } },
   { key: "clinical_outcome_points", label: "Clinical primary outcome", meaning: { 1: "clinical events (death, symptoms, admissions…)", 0: "lab, imaging or surrogate outcome" } },

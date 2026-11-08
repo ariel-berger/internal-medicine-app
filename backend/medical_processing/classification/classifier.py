@@ -234,6 +234,7 @@ Calculate ranking_score (from -8 points to 11 points) based on the following cri
 *Type of Paper (0-2 points):*
 - 2 points: Randomized Controlled Trial (RCT)
 - 1 point: Meta-analysis or systematic review
+- 1 point: Open-label extension of an RCT (patients who finished a randomized trial continue or start the study treatment openly, often reported as "long-term" or "extension" results). The PubMed publication type often omits "Randomized Controlled Trial" for these; recognize them from the title and abstract.
 - 0 points: Other study types
 
 *Disease Prevalence (-1 or 1 or 2 points):*
@@ -272,6 +273,7 @@ Calculate ranking_score (from -8 points to 11 points) based on the following cri
 *Subanalysis Penalty (0 or -1 point):*
 - -1 point: Article is a subanalysis or secondary analysis of a previous study
 - 0 points: Not a subanalysis
+- An open-label extension of an RCT is NOT penalized here just for extending an earlier trial; its lower value is already reflected in type_points.
 
 *Total Score Calculation:*
 ranking_score = focus_points + type_points + prevalence_points + hospitalization_points + clinical_outcome_points + prevention_penalty_points + biologic_penalty_points + screening_penalty_points + scores_penalty_points + subanalysis_penalty_points
