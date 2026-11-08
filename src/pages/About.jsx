@@ -42,7 +42,7 @@ const STEPS = [
   {
     icon: BarChart3,
     title: "Score",
-    text: "Each relevant article gets a relevance score (study design, how common the disease is, relevance to hospitalized patients, clinical outcomes, journal impact) and a short clinical bottom line.",
+    text: "Each relevant article gets a relevance score (study design, how common the disease is, relevance to hospitalized patients, clinical outcomes, journal impact) and a short summary: why it matters compared with earlier studies on the same question, or a clinical bottom line when that can't be written.",
   },
 ];
 
@@ -94,6 +94,13 @@ const EXAMPLE_ARTICLE = {
   is_key_study: true,
   medical_category: "Nephrology",
   clinical_bottom_line: "This multicenter randomized trial of 220 patients with dialysis-requiring acute kidney injury compared a conservative dialysis strategy (dialysis only for specific indications) versus conventional dialysis (3 times weekly). The primary outcome was kidney function recovery at hospital discharge (alive, not on dialysis for ≥14 consecutive days). The conservative strategy resulted in higher recovery rates in unadjusted analysis (64% vs 50%, P=0.04), though the effect was not significant after prespecified adjustment (P=0.15), with fewer dialysis sessions and earlier recovery.",
+  why_it_matters: "Earlier randomized trials and post hoc analyses mostly tested dialysis intensity and start timing in critically ill AKI patients, with more dialysis linked to no benefit or poorer recovery. This trial randomizes stable patients already on dialysis, finding more recovery with indication-based dialysis (64% vs 50%), though adjusted results were not significant.",
+  why_it_matters_sources: [
+    { pmid: "40232884", year: "2025", journal: "Clin J Am Soc Nephrol", design: "", title: "Dialysis Dependence in Standard versus Accelerated Initiation of KRT in AKI: A Post Hoc Analysis." },
+    { pmid: "32668114", year: "2020", journal: "N Engl J Med", design: "Multicenter Study, Randomized Controlled Trial", title: "Timing of Initiation of Renal-Replacement Therapy in Acute Kidney Injury." },
+    { pmid: "29725650", year: "2017", journal: "Kidney Int Rep", design: "", title: "Effect of Frequent Dialysis on Renal Recovery: Results From the Acute Renal Failure Trial Network Study." },
+    { pmid: "18492867", year: "2008", journal: "N Engl J Med", design: "Multicenter Study, Randomized Controlled Trial", title: "Intensity of renal support in critically ill patients with acute kidney injury." },
+  ],
   tags: ["nephrology", "acute-kidney-injury", "dialysis", "kidney-replacement-therapy", "RCT"],
   abstract: "Example abstract.",
 };
@@ -113,6 +120,7 @@ const CARD_EXPLANATIONS = {
   date: { title: "Publication date", text: "When the article was published." },
   pmid: { title: "PMID", text: "The article's PubMed ID." },
   bottomLine: { title: "Clinical Bottom Line", text: "An AI-written summary of the study design and main results." },
+  whyItMatters: { title: "Why it matters", text: "AI-written from the abstracts of up to 4 earlier studies on the same question, mostly from the article's own reference list: what earlier evidence mostly showed and what this study adds. Open \"Based on…\" to see those studies. Articles without one show a Clinical Bottom Line instead." },
   abstract: { title: "Show Abstract", text: "Opens the full abstract from PubMed." },
   tags: { title: "Tags", text: "Topic keywords." },
   status: { title: "Reading status", text: "What you chose with the Save button: Want to Read or Read." },

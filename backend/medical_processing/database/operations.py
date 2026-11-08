@@ -324,8 +324,10 @@ class ArticleDatabase:
                  prevalence_points, hospitalization_points, clinical_outcome_points, impact_factor_points,
                  neurology_penalty_points, metabolic_penalty_points, screening_penalty_points, scores_penalty_points,
                  subanalysis_penalty_points, prognosis_penalty_points, classifier_version, created_at, updated_at, temporality_points,
-                 prevention_focus_penalty_points, biologic_focus_penalty_points)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)
+                 prevention_focus_penalty_points, biologic_focus_penalty_points, why_it_matters, why_it_matters_sources)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?,
+                        COALESCE(?, (SELECT why_it_matters FROM enhanced_classifications WHERE article_id = ?)),
+                        COALESCE(?, (SELECT why_it_matters_sources FROM enhanced_classifications WHERE article_id = ?)))
             ''', (
                 article_id,
                 classification_data.get('participants'),
@@ -350,7 +352,10 @@ class ArticleDatabase:
                 classification_data.get('classifier_version', CLAUDE_MODEL),
                 ranking_breakdown.get('temporality_points', 0),
                 classification_data.get('prevention_penalty_points'),
-                classification_data.get('biologic_penalty_points')
+                classification_data.get('biologic_penalty_points'),
+                # Re-scoring without a new "Why it matters" line keeps the one the article had
+                classification_data.get('why_it_matters'), article_id,
+                json.dumps(classification_data['why_it_matters_sources']) if classification_data.get('why_it_matters_sources') else None, article_id
             ))
                 
             self.conn.commit()
@@ -359,6 +364,21 @@ class ArticleDatabase:
             
         except sqlite3.Error as e:
             logger.error(f"Error updating enhanced classification: {e}")
+            self.conn.rollback()
+            return False
+
+    def update_why_it_matters(self, pmid: str, why: Dict) -> bool:
+        """Save an article's "Why it matters" line and the earlier studies it is based on (why_it_matters.py)."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                UPDATE enhanced_classifications SET why_it_matters = ?, why_it_matters_sources = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE article_id = (SELECT id FROM articles WHERE pmid = ?)
+            ''', (why['why_it_matters'], json.dumps(why['why_it_matters_sources']), pmid))
+            self.conn.commit()
+            return cursor.rowcount == 1
+        except sqlite3.Error as e:
+            logger.error(f"Error saving why it matters for {pmid}: {e}")
             self.conn.rollback()
             return False
     
@@ -566,7 +586,8 @@ def batch_insert_articles(articles: List[Dict]) -> int:
                                  'neurology_penalty_points',
                                  'metabolic_penalty_points', 'screening_penalty_points', 'scores_penalty_points',
                                  'subanalysis_penalty_points', 'prognosis_penalty_points',
-                                 'prevention_penalty_points', 'biologic_penalty_points']
+                                 'prevention_penalty_points', 'biologic_penalty_points',
+                                 'why_it_matters', 'why_it_matters_sources']
                 
                 if any(field in article for field in enhanced_fields):
                     # Store enhanced classification data

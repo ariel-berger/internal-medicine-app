@@ -7,6 +7,7 @@ that can be called from the Flask backend endpoints.
 
 import logging
 import os
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -20,7 +21,8 @@ from .database.schema import (
     add_new_penalty_scoring_columns,
     add_temporality_points_column,
     migrate_penalty_scoring_columns,
-    add_prevention_biologic_penalty_columns
+    add_prevention_biologic_penalty_columns,
+    add_why_it_matters_columns
 )
 from .config import JOURNALS
 
@@ -44,6 +46,7 @@ class MedicalArticlesService:
             migrate_penalty_scoring_columns()
             add_hidden_from_dashboard_column()
             add_prevention_biologic_penalty_columns()
+            add_why_it_matters_columns()
             logger.info("✅ Database initialized and migrated successfully")
             return True
         except Exception as e:
@@ -396,6 +399,11 @@ class MedicalArticlesService:
             
             if not storage_result['success']:
                 return storage_result
+
+            # "Why it matters" takes about half a minute, too long to wait for in the request, so it's
+            # added in the background and the card shows the clinical bottom line until then
+            if self.classifier.model_provider == "claude":
+                threading.Thread(target=self._add_why_it_matters, args=(self.classifier, article), daemon=True).start()
             
             return {
                 'success': True,
@@ -405,6 +413,13 @@ class MedicalArticlesService:
         except Exception as e:
             logger.error(f"Error processing single article: {e}")
             return {'success': False, 'error': str(e)}
+
+    def _add_why_it_matters(self, classifier, article: Dict):
+        from .classification.why_it_matters import why_it_matters
+        why = why_it_matters(classifier, article)
+        if why:
+            with ArticleDatabase() as db:
+                db.update_why_it_matters(article['pmid'], why)
 
     def _calculate_article_statistics(self, classified_articles: List[Dict]) -> Dict:
         """Calculate statistics from classified articles."""

@@ -99,6 +99,8 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
   const [isUpdatingHidden, setIsUpdatingHidden] = useState(false);
   const [isDiscussionOpen, setIsDiscussionOpen] = useState(false);
   const [commentCount, setCommentCount] = useState(0);
+  const [showEarlierStudies, setShowEarlierStudies] = useState(false);
+  const earlierStudies = Array.isArray(article.why_it_matters_sources) ? article.why_it_matters_sources : [];
 
   useEffect(() => {
     if (!article?.id) return;
@@ -390,8 +392,47 @@ export default function MedicalArticleCard({ article, statusRecord, onStatusChan
             )}
           </div>
 
-          {/* Clinical Bottom Line - always visible if it exists */}
-          {article.clinical_bottom_line && (
+          {/* Why it matters (the big picture against earlier studies) when there is one, otherwise the clinical bottom line */}
+          {article.why_it_matters ? (
+            <div className="mt-4">
+              <ExplainPopover explanation={explanations?.whyItMatters} className="flex flex-col rounded-lg">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-slate-800 mb-2 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-slate-600" />
+                    Why it matters
+                  </h4>
+                  <p className="text-slate-700 leading-relaxed">{article.why_it_matters}</p>
+                  {earlierStudies.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEarlierStudies(!showEarlierStudies)}
+                      className="mt-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+                    >
+                      {showEarlierStudies ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      Based on {earlierStudies.length} earlier {earlierStudies.length === 1 ? 'study' : 'studies'}
+                    </button>
+                  )}
+                  {showEarlierStudies && (
+                    <ul className="mt-2 space-y-2 border-t border-slate-200 pt-2">
+                      {earlierStudies.map((s) => (
+                        <li key={s.pmid} className="text-sm leading-snug">
+                          <a
+                            href={`https://pubmed.ncbi.nlm.nih.gov/${s.pmid}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-700 hover:underline"
+                          >
+                            {s.title}
+                          </a>
+                          <span className="block text-slate-500">{[s.year, s.journal, s.design].filter(Boolean).join(' · ')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </ExplainPopover>
+            </div>
+          ) : article.clinical_bottom_line && (
             <div className="mt-4">
               <ExplainPopover explanation={explanations?.bottomLine} className="flex flex-col rounded-lg">
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">

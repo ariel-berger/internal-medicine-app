@@ -5,6 +5,7 @@ import os
 import time
 from dotenv import load_dotenv
 from medical_processing.config import MEDICAL_CATEGORIES, CLAUDE_MODEL, GEMINI_MODEL, STUDY_SIZE_CUTOFF, TOP_JOURNALS
+from medical_processing.classification.why_it_matters import why_it_matters
 import anthropic
 import google.generativeai as genai
 
@@ -787,6 +788,10 @@ def classify_articles_batch(articles: List[Dict], model_provider: str = "claude"
             
             # Use unified two-step classification (filter then classify)
             result = classifier.classify_article_enhanced(article)
+
+            # The card shows "Why it matters" in place of the clinical bottom line when there is one
+            if result.get('is_relevant') and classifier.model_provider == "claude":
+                result.update(why_it_matters(classifier, article) or {})
             
             article_copy = article.copy()
             article_copy.update(result)

@@ -1005,7 +1005,7 @@ def get_relevant_articles():
                    ec.focus_points, ec.type_points, ec.prevalence_points,
                    ec.hospitalization_points, ec.impact_factor_points,
                    COALESCE(ec.hidden_from_dashboard, 0) as hidden_from_dashboard,
-                   a.created_at
+                   a.created_at, ec.why_it_matters, ec.why_it_matters_sources
             FROM articles a
             JOIN enhanced_classifications ec ON a.id = ec.article_id
             WHERE ec.is_relevant = 1 {hidden_clause} {date_clause}
@@ -1063,7 +1063,9 @@ def get_relevant_articles():
                 'impact_factor_points': article[20],
                 'is_key_study': article[0] in key_ids,
                 'hidden_from_dashboard': bool(article[21]) if len(article) > 21 else False,
-                'created_at': article[22] if len(article) > 22 else None
+                'created_at': article[22] if len(article) > 22 else None,
+                'why_it_matters': article[23],
+                'why_it_matters_sources': json.loads(article[24]) if article[24] else []
             })
         
         return jsonify({

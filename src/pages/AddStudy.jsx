@@ -138,6 +138,7 @@ export default function AddStudy() {
                     <div className="bg-blue-50 p-4 rounded-md">
                         <h4 className="text-sm font-semibold text-blue-900 mb-1">Clinical Bottom Line</h4>
                         <p className="text-sm text-blue-800">{result.clinical_bottom_line}</p>
+                        <p className="text-xs text-blue-700 mt-2">A "Why it matters" line comparing it with earlier studies is added in a minute or two, if one can be written.</p>
                     </div>
                   )}
 

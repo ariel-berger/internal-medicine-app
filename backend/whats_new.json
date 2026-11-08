@@ -33,5 +33,10 @@
     "id": 7,
     "date": "2026-11-01",
     "text": "Newest first in My Library: Your Want to Read and Read lists now show the most recently published articles at the top, and a new \"Published\" filter lets you narrow them to the past week, month, 3 months or year. Every article you've saved now shows up, including older ones that were sometimes missing."
+  },
+  {
+    "id": 8,
+    "date": "2026-11-08",
+    "text": "\"Why it matters\" on article cards: New studies now get a short big-picture line instead of the Clinical Bottom Line: what earlier studies on the same question mostly showed, and what this study adds. It's written from the abstracts of earlier studies, mostly from the article's own reference list, and you can open \"Based on\u2026\" to see them. Articles where it can't be written keep their Clinical Bottom Line."
   }
 ]

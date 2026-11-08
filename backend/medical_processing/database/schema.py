@@ -537,6 +537,28 @@ def add_prevention_biologic_penalty_columns():
     finally:
         conn.close()
 
+def add_why_it_matters_columns():
+    """Add the columns for an article's "Why it matters" line and the earlier studies it is based on (a JSON list).
+    Articles scored before have NULL there and keep showing their clinical bottom line."""
+    conn = sqlite3.connect(get_database_path())
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("PRAGMA table_info(enhanced_classifications)")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        for column in ('why_it_matters', 'why_it_matters_sources'):
+            if column not in columns:
+                cursor.execute(f'ALTER TABLE enhanced_classifications ADD COLUMN {column} TEXT')
+                print(f"SUCCESS: Added {column} column")
+        conn.commit()
+
+    except sqlite3.Error as e:
+        print(f"ERROR: Error adding why it matters columns: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 def get_connection():
     """Get database connection."""
     return sqlite3.connect(get_database_path())
@@ -552,4 +574,5 @@ if __name__ == "__main__":
     migrate_penalty_scoring_columns()
     add_hidden_from_dashboard_column()
     add_prevention_biologic_penalty_columns()
+    add_why_it_matters_columns()
     print("Database created and migrated successfully!")
