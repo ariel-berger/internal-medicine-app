@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
-from sqlalchemy import text
+from sqlalchemy import text, func
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 from datetime import datetime, timedelta, timezone
 import os
 import json
@@ -22,6 +23,7 @@ import pytz
 from utils.mailer import send_emails
 from utils.weekly_digest_email import build_digest_email, build_approval_email, build_scan_review_email
 from utils import weekly_email_store
+from utils.account_emails import build_password_reset_email, build_confirm_email, build_signup_limit_email
 
 # Configure logging to show all logs in terminal
 logging.basicConfig(
@@ -174,6 +176,9 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     # optional role
     role = db.Column(db.String(50), default='user')
+    # True once the address is shown to be theirs (Google sign-in or an emailed link). Admin and senior
+    # access from the allowlists only applies to confirmed addresses, so nobody gets it by typing someone's email.
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
 
     def to_dict(self):
         return {
@@ -322,61 +327,177 @@ def health_check():
         }
     })
 
+# ---- Accounts: sign-up, sign-in, "forgot password", admin/senior email confirmation ----
+
+def hash_password(password: str) -> str:
+    try:
+        return generate_password_hash(password)
+    except AttributeError:
+        # Python builds without hashlib.scrypt (e.g. Apple's Python on the Mac used for local testing):
+        # use werkzeug's other built-in method. The live server has scrypt, so this never applies there.
+        return generate_password_hash(password, method='pbkdf2:sha256')
+
+def normalize_email(email) -> str:
+    return weekly_email_store.normalize_email(email if isinstance(email, str) else '')
+
+def find_user_by_email(email):
+    """Emails are matched ignoring capital letters, so "Gil@…" and "gil@…" are the same account."""
+    email = normalize_email(email)
+    return User.query.filter(func.lower(User.email) == email).first() if email else None
+
+def allowlist_role(email: str) -> str:
+    if is_admin_email(email):
+        return 'admin'
+    if is_senior_email(email):
+        return 'senior'
+    return 'user'
+
+def sync_role(user):
+    """Admin/senior access comes from the allowlists, but only once the address is confirmed as theirs."""
+    desired_role = allowlist_role(user.email) if user.email_verified else 'user'
+    if user.role != desired_role:
+        user.role = desired_role
+        db.session.commit()
+
+def _record_login(user):
+    try:
+        db.session.add(UserLoginHistory(user_id=user.id))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Failed to record login history: {e}")
+    _remember_subscriber(user.email)
+
+def _was_here_before(email: str) -> bool:
+    """Whether this address has logged in before (kept on the weekly email list, which survives server updates)."""
+    try:
+        with _email_store() as conn:
+            subscriber = weekly_email_store.get_subscriber(conn, email)
+        return bool(subscriber and subscriber['has_logged_in'])
+    except Exception:
+        return False
+
+RECREATE_ACCOUNT_MESSAGE = ("We updated the site and need you to create your account again, just this once. "
+                            "Use the same email; your saved articles come back by themselves.")
+
+# Signed links for the emails below. They can't be forged without SECRET_KEY and expire on their own.
+_account_links = URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='account-links')
+RESET_LINK_HOURS = 2
+CONFIRM_LINK_DAYS = 7
+
+def _account_link(user, purpose: str) -> str:
+    # The end of the password hash makes a reset link stop working once the password has been changed with it
+    return _account_links.dumps({'uid': user.id, 'email': user.email, 'purpose': purpose,
+                                 'pw': (user.password_hash or '')[-16:]})
+
+def _user_from_link(token, purpose: str, max_age_seconds: int):
+    try:
+        data = _account_links.loads(token or '', max_age=max_age_seconds)
+    except BadSignature:  # also covers expired links
+        return None
+    if not isinstance(data, dict) or data.get('purpose') != purpose:
+        return None
+    user = User.query.get(data.get('uid'))
+    if not user or user.email != data.get('email'):
+        return None
+    if purpose == 'reset' and (user.password_hash or '')[-16:] != data.get('pw'):
+        return None
+    return user
+
+def _send_confirm_email(user) -> bool:
+    access = allowlist_role(user.email)
+    url = f"{APP_URL}/login?confirm={_account_link(user, 'confirm')}"
+    return send_emails([{**build_confirm_email(url, access, CONFIRM_LINK_DAYS), 'to': user.email}]) > 0
+
+# At most a few "forgot password" emails per address per hour, so nobody can flood someone's inbox.
+# Kept in memory per server process: enough for this, and it resets on restart.
+_reset_emails_sent = {}
+RESET_EMAILS_PER_HOUR = 3
+
+def _reset_email_allowed(email: str) -> bool:
+    now = datetime.utcnow()
+    recent = [t for t in _reset_emails_sent.get(email, []) if now - t < timedelta(hours=1)]
+    if len(recent) >= RESET_EMAILS_PER_HOUR:
+        _reset_emails_sent[email] = recent
+        return False
+    _reset_emails_sent[email] = recent + [now]
+    return True
+
+def _login_response(user, message, **extra):
+    return jsonify({'message': message, 'token': issue_access_token(user), 'user': user.to_dict(), **extra})
+
+def _json_body():
+    try:
+        return request.get_json(silent=True) or {}
+    except Exception:
+        return {}
+
+# Safety valve: once this many new people joined in the last 24 hours, new addresses can't sign up
+# until the count drops. People who were here before (or whom an admin added to the email list) always can.
+SIGNUP_DAILY_LIMIT = int(os.getenv('SIGNUP_DAILY_LIMIT', '200'))
+SIGNUP_PAUSED_MESSAGE = ("Lots of new people joined today, so new sign-ups are paused for now. "
+                         "Please try again tomorrow.")
+_signup_limit_alerts = set()  # days an alert was already sent (per server process)
+
+def _new_people_last_day(conn) -> int:
+    since = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%S')
+    return conn.execute("SELECT COUNT(*) FROM email_subscribers WHERE has_logged_in = 1 AND created_at >= ?",
+                        (since,)).fetchone()[0]
+
+def _signups_paused_for(email: str) -> bool:
+    try:
+        with _email_store() as conn:
+            if weekly_email_store.get_subscriber(conn, email):
+                return False
+            count = _new_people_last_day(conn)
+    except Exception as e:
+        print(f"Couldn't check the sign-up limit: {e}")
+        return False
+    if count < SIGNUP_DAILY_LIMIT:
+        return False
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    if today not in _signup_limit_alerts:
+        _signup_limit_alerts.add(today)
+        try:
+            send_emails([{**build_signup_limit_email(count, SIGNUP_DAILY_LIMIT), 'to': WEEKLY_EMAIL_APPROVER}])
+        except Exception as e:
+            print(f"Couldn't send the sign-up limit alert: {e}")
+    return True
+
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     """User registration"""
     try:
-        # Handle JSON parsing errors, especially for Safari
-        try:
-            data = request.get_json() or {}
-        except Exception as json_error:
-            print(f"JSON parsing error in /api/auth/register: {json_error}")
-            return jsonify({'error': 'Invalid request format. Please try again.'}), 400
-        
-        if not data.get('email') or not data.get('password'):
+        data = _json_body()
+        email = normalize_email(data.get('email'))
+        password = data.get('password') or ''
+        if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
-        
-        # Check if user already exists
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({'error': 'User already exists'}), 400
-        
-        # Create new user with hashed password
-        email = data['email']
-        if is_admin_email(email):
-            role = 'admin'
-        elif is_senior_email(email):
-            role = 'senior'
-        else:
-            role = 'user'
-        
+        if not weekly_email_store.EMAIL_RE.fullmatch(email):
+            return jsonify({'error': 'Please check the email address.'}), 400
+        if find_user_by_email(email):
+            return jsonify({'error': 'There is already an account with this email. Sign in instead, '
+                                     'or use "Forgot password?" if you don\'t remember the password.'}), 400
+        if _signups_paused_for(email):
+            return jsonify({'error': SIGNUP_PAUSED_MESSAGE, 'code': 'signups_paused'}), 429
+
         user = User(
             email=email,
-            password_hash=generate_password_hash(data['password']),
-            full_name=data.get('fullName', ''),
-            role=role
+            password_hash=hash_password(password),
+            full_name=(data.get('fullName') or '').strip() or email.split('@')[0],
+            role='user',
+            email_verified=False,
         )
         db.session.add(user)
         db.session.commit()
-        
-        # Record login
-        try:
-            login_record = UserLoginHistory(user_id=user.id)
-            db.session.add(login_record)
-            db.session.commit()
-        except Exception as e:
-            print(f"Failed to record login history: {e}")
-        _remember_subscriber(user.email)
-        
-        access_token = issue_access_token(user)
-        return jsonify({
-            'message': 'User created successfully',
-            'token': access_token,
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'fullName': user.full_name
-            }
-        })
+        _record_login(user)
+
+        # Admin/senior addresses must be confirmed before that access turns on
+        needs_confirmation = allowlist_role(email) != 'user'
+        confirmation_sent = _send_confirm_email(user) if needs_confirmation else False
+        return _login_response(user, 'User created successfully',
+                               needs_email_confirmation=needs_confirmation,
+                               confirmation_sent=confirmation_sent)
     except Exception as e:
         # Log server-side and return sanitized error
         print(f"/api/auth/register failed: {e}")
@@ -390,13 +511,7 @@ def google_login():
         print("Google auth not available - libraries not installed")
         return jsonify({'error': 'Google auth not available on server. Please install google-auth library.'}), 503
 
-    # Handle JSON parsing errors, especially for Safari
-    try:
-        data = request.get_json() or {}
-    except Exception as json_error:
-        print(f"JSON parsing error in /api/auth/google: {json_error}")
-        return jsonify({'error': 'Invalid request format. Please try again.'}), 400
-    
+    data = _json_body()
     token = data.get('idToken') or data.get('credential')
     client_id = os.getenv('GOOGLE_CLIENT_ID')
     if not token:
@@ -411,57 +526,31 @@ def google_login():
             google_requests.Request(),
             audience=client_id,
         )
-        email = idinfo.get('email')
+        email = normalize_email(idinfo.get('email'))
         full_name = idinfo.get('name') or ''
         if not email:
             return jsonify({'error': 'Google token invalid: no email'}), 401
+        google_confirmed = idinfo.get('email_verified') in (True, 'true')
 
-        user: Optional[User] = User.query.filter_by(email=email).first()
+        user: Optional[User] = find_user_by_email(email)
+        if not user and _signups_paused_for(email):
+            return jsonify({'error': SIGNUP_PAUSED_MESSAGE, 'code': 'signups_paused'}), 429
         if not user:
-            if is_admin_email(email):
-                role = 'admin'
-            elif is_senior_email(email):
-                role = 'senior'
-            else:
-                role = 'user'
-            
             user = User(
                 email=email,
                 password_hash='google-oauth',
-                full_name=full_name,
-                role=role,
+                full_name=full_name or email.split('@')[0],
+                role='user',
+                email_verified=google_confirmed,
             )
             db.session.add(user)
             db.session.commit()
-        else:
-            # Sync role with allowlist policy
-            if is_admin_email(email):
-                desired_role = 'admin'
-            elif is_senior_email(email):
-                desired_role = 'senior'
-            else:
-                desired_role = 'user'
-            
-            if user.role != desired_role:
-                user.role = desired_role
-                db.session.commit()
-
-        access_token = issue_access_token(user)
-        
-        # Record login
-        try:
-            login_record = UserLoginHistory(user_id=user.id)
-            db.session.add(login_record)
+        elif google_confirmed and not user.email_verified:
+            user.email_verified = True
             db.session.commit()
-        except Exception as e:
-            print(f"Failed to record login history: {e}")
-        _remember_subscriber(user.email)
-
-        return jsonify({
-            'message': 'Login successful',
-            'token': access_token,
-            'user': user.to_dict(),
-        })
+        sync_role(user)
+        _record_login(user)
+        return _login_response(user, 'Login successful')
     except Exception as e:
         print(f"/api/auth/google failed: {e}")
         import traceback
@@ -472,56 +561,84 @@ def google_login():
 def login():
     """User login"""
     try:
-        # Handle JSON parsing errors, especially for Safari
-        try:
-            data = request.get_json() or {}
-        except Exception as json_error:
-            print(f"JSON parsing error in /api/auth/login: {json_error}")
-            return jsonify({'error': 'Invalid request format. Please try again.'}), 400
-        
-        if not data.get('email') or not data.get('password'):
+        data = _json_body()
+        email = normalize_email(data.get('email'))
+        password = data.get('password') or ''
+        if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
-        
-        user = User.query.filter_by(email=data['email']).first()
-        if not user or not check_password_hash(user.password_hash, data['password']):
+
+        user = find_user_by_email(email)
+        if not user:
+            if _was_here_before(email):
+                return jsonify({'error': RECREATE_ACCOUNT_MESSAGE, 'code': 'recreate_account'}), 401
             return jsonify({'error': 'Invalid credentials'}), 401
-        # Optionally sync role with allowlist on login
-        if is_admin_email(user.email):
-            desired_role = 'admin'
-        elif is_senior_email(user.email):
-            desired_role = 'senior'
-        else:
-            desired_role = 'user'
-        
-        if user.role != desired_role:
-            user.role = desired_role
-            db.session.commit()
-        
-        access_token = issue_access_token(user)
+        if user.password_hash == 'google-oauth':
+            return jsonify({'error': 'This account signs in with the Google button below. '
+                                     'To use a password instead, choose "Forgot password?".',
+                            'code': 'google_account'}), 401
+        if not check_password_hash(user.password_hash, password):
+            return jsonify({'error': 'Invalid credentials'}), 401
 
-        # Record login
-        try:
-            login_record = UserLoginHistory(user_id=user.id)
-            db.session.add(login_record)
-            db.session.commit()
-        except Exception as e:
-            print(f"Failed to record login history: {e}")
-        _remember_subscriber(user.email)
-
-        return jsonify({
-            'message': 'Login successful',
-            'token': access_token,
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'fullName': user.full_name
-            }
-        })
+        sync_role(user)
+        _record_login(user)
+        return _login_response(user, 'Login successful')
     except Exception as e:
         print(f"/api/auth/login failed: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Login failed: {str(e)}'}), 500
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """Email a link for choosing a new password."""
+    email = normalize_email(_json_body().get('email'))
+    if not weekly_email_store.EMAIL_RE.fullmatch(email or ''):
+        return jsonify({'error': 'Please enter your email address.'}), 400
+    user = find_user_by_email(email)
+    if not user:
+        if _was_here_before(email):
+            return jsonify({'error': RECREATE_ACCOUNT_MESSAGE, 'code': 'recreate_account'}), 404
+        return jsonify({'error': 'There is no account with this email. You can create one with "New here? Create an account".',
+                        'code': 'no_account'}), 404
+    if not _reset_email_allowed(email):
+        return jsonify({'error': 'We already sent you a few links in the last hour. Please check your inbox and spam folder, '
+                                 'or try again later.'}), 429
+    url = f"{APP_URL}/reset-password?token={_account_link(user, 'reset')}"
+    sent = send_emails([{**build_password_reset_email(url, RESET_LINK_HOURS), 'to': user.email}])
+    if not sent:
+        return jsonify({'error': "We couldn't send the email just now. Please try again in a few minutes."}), 503
+    return jsonify({'message': f"We've emailed a link to {user.email}. It works for {RESET_LINK_HOURS} hours. "
+                               "If you don't see it within a few minutes, check your spam folder."})
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """Set a new password from the emailed link, then sign in."""
+    data = _json_body()
+    user = _user_from_link(data.get('token'), 'reset', RESET_LINK_HOURS * 3600)
+    if not user:
+        return jsonify({'error': 'This link has expired or was already used. Please ask for a new one.'}), 400
+    password = data.get('password') or ''
+    if not password:
+        return jsonify({'error': 'Please choose a password.'}), 400
+    user.password_hash = hash_password(password)
+    user.email_verified = True  # the link reached their inbox
+    db.session.commit()
+    sync_role(user)
+    _record_login(user)
+    return _login_response(user, 'Password changed')
+
+@app.route('/api/auth/confirm-email', methods=['POST'])
+def confirm_email():
+    """Confirm an admin/senior address from the emailed link; that access turns on right away."""
+    user = _user_from_link(_json_body().get('token'), 'confirm', CONFIRM_LINK_DAYS * 86400)
+    if not user:
+        return jsonify({'error': 'This link has expired or is no longer valid. Sign in with the Google button, '
+                                 'or use "Forgot password?" to get a new link.'}), 400
+    if not user.email_verified:
+        user.email_verified = True
+        db.session.commit()
+    sync_role(user)
+    return jsonify({'message': 'Email confirmed', 'role': user.role})
 
 @app.route('/api/auth/me', methods=['GET'])
 @jwt_required()
@@ -2446,21 +2563,22 @@ try:
         except Exception as e:
             db.session.rollback()
             print(f"Warning: UserStudyStatus migration failed: {e}")
-        # Sync admin roles
-        if ADMIN_EMAILS:
-            for admin_email in ADMIN_EMAILS:
-                u = User.query.filter_by(email=admin_email).first()
-                if u and u.role != 'admin':
-                    u.role = 'admin'
-                    db.session.commit()
-        
-        # Sync senior roles
-        if SENIOR_EMAILS:
-            for senior_email in SENIOR_EMAILS:
-                u = User.query.filter_by(email=senior_email).first()
-                if u and u.role != 'senior':
-                    u.role = 'senior'
-                    db.session.commit()
+        # Added for admin/senior email confirmation. Accounts that already exist keep their access
+        # (SQL default 1); new accounts start unconfirmed (the model's default).
+        try:
+            columns = [row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))]
+            if columns and 'email_verified' not in columns:
+                db.session.execute(text("ALTER TABLE user ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 1"))
+                db.session.commit()
+                print("Added email_verified column to user table")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Warning: email_verified migration failed: {e}")
+        # Sync admin and senior roles (confirmed addresses only)
+        for allowlisted_email in ADMIN_EMAILS | SENIOR_EMAILS:
+            u = find_user_by_email(allowlisted_email)
+            if u:
+                sync_role(u)
 except Exception as e:
     print(f"Warning: database initialization failed at import time: {e}")
 

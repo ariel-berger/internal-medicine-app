@@ -153,6 +153,23 @@ class LocalAPIClient {
     return response;
   }
 
+  async forgotPassword(email) {
+    return this.post('/auth/forgot-password', { email });
+  }
+
+  // From the emailed link: set a new password, then sign in
+  async resetPassword(token, password) {
+    const response = await this.post('/auth/reset-password', { token, password });
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    return response;
+  }
+
+  async confirmEmail(token) {
+    return this.post('/auth/confirm-email', { token });
+  }
+
   async googleLogin(credential) {
     // Backend accepts both 'idToken' and 'credential' - send as 'credential' to match Google's naming
     const response = await this.post('/auth/google', { credential, idToken: credential });

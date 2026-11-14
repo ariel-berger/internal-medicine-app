@@ -11,6 +11,7 @@ import About from "./About";
 import WeeklyEmail from "./WeeklyEmail";
 import ScanManagement from "./ScanManagement";
 import Unsubscribe from "./Unsubscribe";
+import ResetPassword from "./ResetPassword";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -60,6 +61,7 @@ function PagesContent() {
         <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/unsubscribe" element={<Unsubscribe />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/*" element={
                 <ProtectedRoute>
                     <Layout currentPageName={currentPage}>

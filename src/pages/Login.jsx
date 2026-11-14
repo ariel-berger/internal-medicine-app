@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,8 +16,34 @@ export default function Login() {
   const [isRegister, setIsRegister] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isForgot, setIsForgot] = useState(false);
+  const [info, setInfo] = useState('');
+  const [showContinue, setShowContinue] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const googleButtonRef = useRef(null);
+
+  // Opened from the "Confirm my email" link sent to admin/senior addresses
+  useEffect(() => {
+    const token = searchParams.get('confirm');
+    if (!token) return;
+    setSearchParams({}, { replace: true });
+    localClient
+      .confirmEmail(token)
+      .then((result) => {
+        setInfo(`Your email is confirmed and your ${result.role} access is on.` + (localClient.token ? '' : ' Sign in to continue.'));
+        setShowContinue(!!localClient.token);
+      })
+      .catch((e) => setError(e.message || 'This link is no longer valid.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const switchMode = (mode) => {
+    setIsRegister(mode === 'register');
+    setIsForgot(mode === 'forgot');
+    setError('');
+    setInfo('');
+  };
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -111,10 +137,24 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setInfo('');
 
     try {
+      if (isForgot) {
+        const result = await localClient.forgotPassword(email);
+        setInfo(result.message);
+        return;
+      }
       if (isRegister) {
-        await User.register(email, password, fullName || email.split('@')[0]);
+        const result = await User.register(email, password, fullName || email.split('@')[0]);
+        if (result?.needs_email_confirmation) {
+          // Admin/senior address: that access turns on once the emailed link is clicked
+          setInfo(result.confirmation_sent
+            ? `Your account is ready. Because this address has special access, we've emailed a confirmation link to ${email.trim()}. That access turns on after you click it; you can already use the site.`
+            : 'Your account is ready. We couldn\'t send the confirmation email for your special access just now. Sign in with the Google button, or use "Forgot password?" later to get a link.');
+          setShowContinue(true);
+          return;
+        }
       } else {
         await User.login(email, password);
       }
@@ -122,10 +162,21 @@ export default function Login() {
     } catch (error) {
       // Extract meaningful error message
       let errorMessage = error.message;
-      
+      const code = error.data?.code;
+
+      if (code === 'recreate_account') {
+        // Had an account before the site was updated: create it again once
+        switchMode('register');
+        setInfo(error.message);
+        return;
+      }
+
       // Handle network errors
       if (error.status === 0 || error.name === 'TypeError') {
         errorMessage = 'Network error: Please check your internet connection and try again.';
+      } else if (code) {
+        // The server explains what to do (e.g. a Google account, sign-ups paused)
+        errorMessage = error.message;
       } else if (error.status === 400) {
         // Use the error message from the API response
         errorMessage = error.message || (isRegister ? 'Registration failed. Please check your information.' : 'Login failed. Please check your credentials.');
@@ -162,16 +213,33 @@ export default function Login() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
+            <CardTitle>{isForgot ? 'Forgot password' : isRegister ? 'Create account' : 'Sign In'}</CardTitle>
             <CardDescription>
-              Enter your credentials to access the dashboard
+              {isForgot
+                ? "Enter your email and we'll send you a link to choose a new password."
+                : 'Enter your credentials to access the dashboard'}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {showContinue ? (
+              <div className="space-y-4">
+                <Alert className="border-blue-200 bg-blue-50">
+                  <AlertDescription className="text-blue-900">{info}</AlertDescription>
+                </Alert>
+                <Button className="w-full" onClick={() => navigate('/dashboard')}>
+                  Continue to the dashboard
+                </Button>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              {info && (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <AlertDescription className="text-blue-900">{info}</AlertDescription>
                 </Alert>
               )}
 
@@ -210,22 +278,31 @@ export default function Login() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1"
-                  placeholder="Enter your password"
-                />
-              </div>
+              {!isForgot && (
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                    Password
+                  </label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete={isRegister ? 'new-password' : 'current-password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-1"
+                    placeholder="Enter your password"
+                  />
+                  {!isRegister && (
+                    <div className="text-right mt-1">
+                      <button type="button" className="text-sm text-blue-700 hover:underline" onClick={() => switchMode('forgot')} disabled={isLoading}>
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <Button
                 type="submit"
@@ -235,24 +312,25 @@ export default function Login() {
                 {isLoading ? (
                   <>
                     <Loader className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in...
+                    {isForgot ? 'Sending...' : isRegister ? 'Creating account...' : 'Signing in...'}
                   </>
                 ) : (
-                  (isRegister ? 'Create account' : 'Sign in')
+                  (isForgot ? 'Email me a link' : isRegister ? 'Create account' : 'Sign in')
                 )}
               </Button>
               <div className="text-center text-sm text-gray-600 mt-2">
-                {isRegister ? (
-                  <button type="button" className="underline" onClick={() => setIsRegister(false)} disabled={isLoading}>
-                    Already have an account? Sign in
+                {isForgot || isRegister ? (
+                  <button type="button" className="underline" onClick={() => switchMode('signin')} disabled={isLoading}>
+                    {isForgot ? 'Back to sign in' : 'Already have an account? Sign in'}
                   </button>
                 ) : (
-                  <button type="button" className="underline" onClick={() => setIsRegister(true)} disabled={isLoading}>
+                  <button type="button" className="underline" onClick={() => switchMode('register')} disabled={isLoading}>
                     New here? Create an account
                   </button>
                 )}
               </div>
             </form>
+            )}
 
             <div className="mt-6">
               <div ref={googleButtonRef} className="flex justify-center mb-4" />
