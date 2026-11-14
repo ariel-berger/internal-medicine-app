@@ -306,6 +306,11 @@ class LocalAPIClient {
     return this.post(`/admin/weekly-digest/${digestId}/skip`, {});
   }
 
+  // Send a past weekly email, as it went out, to one address (which joins the list)
+  async resendWeeklyDigest(digestId, email) {
+    return this.post(`/admin/weekly-digest/${digestId}/resend`, { email });
+  }
+
   async getScanReview() {
     return this.get('/admin/scan-review');
   }

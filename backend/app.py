@@ -2523,6 +2523,29 @@ def send_weekly_digest(digest_id):
     threading.Thread(target=_deliver_weekly_digest, args=(digest_id, articles, _whats_new_lines(whats_new_text)), daemon=True).start()
     return jsonify({'status': 'sending', 'recipients_count': recipients_count}), 202
 
+@app.route('/api/admin/weekly-digest/<int:digest_id>/resend', methods=['POST'])
+@jwt_required()
+def resend_weekly_digest(digest_id):
+    """Send an already-sent weekly email, exactly as it went out, to one address, and add it to the list.
+    An existing on/off choice is kept, and the reply never says whether the address had unsubscribed."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    email_address = normalize_email((request.get_json(silent=True) or {}).get('email'))
+    if not weekly_email_store.EMAIL_RE.fullmatch(email_address or ''):
+        return jsonify({'error': 'Please check the email address.'}), 400
+    with _email_store() as conn:
+        digest = weekly_email_store.get_digest(conn, digest_id)
+        if not digest or digest['status'] != 'sent' or not digest['articles']:
+            return jsonify({'error': 'Only emails that were sent can be sent again.'}), 404
+        has_account = find_user_by_email(email_address) is not None
+        subscriber = weekly_email_store.ensure_subscriber(conn, email_address, logged_in=has_account,
+                                                          added_by_admin=not has_account)
+        recipients_count = len(_digest_recipients(conn))
+    message = _digest_email_for(subscriber, digest['articles'], _whats_new_lines(digest['whats_new']))
+    if not send_emails([message]):
+        return jsonify({'error': "Couldn't send the email. Please try again, or ask Ariel to check the email settings."}), 500
+    return jsonify({'sent_to': email_address, 'recipients_count': recipients_count})
+
 @app.route('/api/admin/weekly-digest/<int:digest_id>/skip', methods=['POST'])
 @jwt_required()
 def skip_weekly_digest(digest_id):

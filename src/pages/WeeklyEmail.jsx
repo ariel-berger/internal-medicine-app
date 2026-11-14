@@ -4,6 +4,7 @@ import { localClient } from "@/api/localClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -27,6 +28,68 @@ const STATUS_LABELS = {
   skipped: () => "Skipped",
   expired: () => "Not sent (replaced by the next week's email)",
 };
+
+// Under each sent email in "Past weeks": send that email, exactly as it went out, to one more address
+function ResendToSomeone({ digestId, onRecipientsCountChange }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { type: 'success' | 'error', text }
+
+  const send = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await localClient.resendWeeklyDigest(digestId, email);
+      setResult({ type: "success", text: `Sent to ${r.sent_to}. If they weren't on the weekly email list, they are now.` });
+      setEmail("");
+      setOpen(false);
+      onRecipientsCountChange?.(r.recipients_count);
+    } catch (err) {
+      setResult({ type: "error", text: err.message || "Couldn't send. Please try again." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      {open ? (
+        <form onSubmit={send} className="space-y-1.5">
+          <p className="text-xs text-slate-500">They get this email exactly as it went out, and join the weekly email list.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="email"
+              required
+              autoFocus
+              placeholder="name@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-8 w-64 max-w-full text-sm"
+              disabled={busy}
+            />
+            <Button type="submit" size="sm" className="h-8" disabled={busy || !email.trim()}>
+              {busy ? <Loader className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+              Send
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="h-8" disabled={busy} onClick={() => { setOpen(false); setEmail(""); }}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setOpen(true); setResult(null); }}>
+          <Send className="w-3 h-3 mr-1.5" />
+          Send to someone
+        </Button>
+      )}
+      {result && (
+        <p className={`mt-1.5 text-sm ${result.type === "error" ? "text-red-600" : "text-green-700"}`}>{result.text}</p>
+      )}
+    </div>
+  );
+}
 
 export default function WeeklyEmail() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -411,6 +474,12 @@ export default function WeeklyEmail() {
                       </li>
                     ))}
                   </ol>
+                )}
+                {d.status === "sent" && d.articles?.length > 0 && (
+                  <ResendToSomeone
+                    digestId={d.id}
+                    onRecipientsCountChange={(count) => setData((prev) => ({ ...prev, recipients_count: count }))}
+                  />
                 )}
               </div>
             ))}
