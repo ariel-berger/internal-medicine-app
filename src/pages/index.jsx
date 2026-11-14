@@ -12,6 +12,7 @@ import WeeklyEmail from "./WeeklyEmail";
 import ScanManagement from "./ScanManagement";
 import Unsubscribe from "./Unsubscribe";
 import ResetPassword from "./ResetPassword";
+import SuggestionBox from "./SuggestionBox";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -36,6 +37,8 @@ const PAGES = {
     WeeklyEmail: WeeklyEmail,
 
     ScanManagement: ScanManagement,
+
+    SuggestionBox: SuggestionBox,
 
 }
 
@@ -77,6 +80,7 @@ function PagesContent() {
                             <Route path="/About" element={<About />} />
                             <Route path="/WeeklyEmail" element={<WeeklyEmail />} />
                             <Route path="/ScanManagement" element={<ScanManagement />} />
+                            <Route path="/SuggestionBox" element={<SuggestionBox />} />
                         </Routes>
                     </Layout>
                 </ProtectedRoute>

@@ -230,7 +230,11 @@ export default function About() {
           <p className="text-slate-700 leading-relaxed">
             Internal Nerds is a private project by <span className="font-semibold text-slate-900">Gil Ben Noon, MD</span>,
             an internal medicine resident, made for colleagues to use. It's a work in progress, and your
-            feedback is much appreciated.
+            feedback is much appreciated: leave a note in the{" "}
+            <Link to={createPageUrl("SuggestionBox")} className="font-medium text-blue-700 hover:underline underline-offset-4">
+              Suggestion Box
+            </Link>{" "}
+            (you can stay anonymous), or get in touch directly.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <a

@@ -243,6 +243,19 @@ class LocalAPIClient {
     return this.get('/article-comments/counts');
   }
 
+  // Suggestion Box
+  async sendSuggestion(content, anonymous) {
+    return this.post('/suggestions', { content, anonymous });
+  }
+
+  async getSuggestions() {
+    return this.get('/admin/suggestions');
+  }
+
+  async setSuggestionDone(suggestionId, done) {
+    return this.put(`/admin/suggestions/${suggestionId}`, { done });
+  }
+
   // Admin methods
   async getAdminSystemStats() {
     return this.get('/admin/system-stats');

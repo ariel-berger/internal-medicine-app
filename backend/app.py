@@ -24,6 +24,7 @@ from utils.mailer import send_emails
 from utils.weekly_digest_email import build_digest_email, build_approval_email, build_scan_review_email
 from utils import weekly_email_store
 from utils.account_emails import build_password_reset_email, build_confirm_email, build_signup_limit_email
+from utils.suggestion_email import build_suggestion_email
 
 # Configure logging to show all logs in terminal
 logging.basicConfig(
@@ -294,6 +295,26 @@ class ArticleInteraction(db.Model):
     article_id = db.Column(db.Integer, nullable=False)
     interaction_type = db.Column(db.String(50), nullable=False) # 'pubmed_click', 'doi_click'
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Suggestion(db.Model):
+    """A note from the Suggestion Box. Anonymous ones store no name, email or user id at all."""
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    author_name = db.Column(db.String(100), nullable=True)
+    author_email = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    done_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'content': self.content,
+            'author_name': self.author_name,
+            'author_email': self.author_email,
+            # Stored in UTC; mark it so browsers convert to local time
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'done': self.done_at is not None,
+        }
 
 # Login tokens name a user by id, but ids are handed out again when the user
 # database is recreated (e.g. on a redeploy), so an old token could resolve to
@@ -1567,6 +1588,74 @@ def get_article_comment_counts():
     except Exception as e:
         return jsonify({'error': f'Failed to get comment counts: {str(e)}'}), 500
 
+# ---- Suggestion Box ----
+MAX_SUGGESTION_LENGTH = 5000
+
+def _email_suggestion(suggestion: Suggestion):
+    """Email a new suggestion to SUGGESTION_EMAIL (Gil by default). Replying goes to its author, if named."""
+    message = {
+        **build_suggestion_email(suggestion.content, suggestion.author_name, suggestion.author_email,
+                                 f"{APP_URL}/AdminDashboard"),
+        'to': SUGGESTION_EMAIL,
+    }
+    if suggestion.author_email:
+        message['reply_to'] = suggestion.author_email
+    threading.Thread(target=send_emails, args=([message],), daemon=True).start()
+
+@app.route('/api/suggestions', methods=['POST'])
+@jwt_required()
+def create_suggestion():
+    """Anyone signed in can drop a note in the Suggestion Box, with their name or anonymously."""
+    current_user = User.query.get(int(get_jwt_identity()))
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
+    data = request.get_json(silent=True) or {}
+    content = (data.get('content') or '').strip() if isinstance(data.get('content'), str) else ''
+    if not content:
+        return jsonify({'error': 'Please write your suggestion first.'}), 400
+    if len(content) > MAX_SUGGESTION_LENGTH:
+        return jsonify({'error': f'Please keep it under {MAX_SUGGESTION_LENGTH} characters.'}), 400
+    anonymous = data.get('anonymous') is True
+    try:
+        suggestion = Suggestion(
+            content=content,
+            author_name=None if anonymous else current_user.full_name,
+            author_email=None if anonymous else current_user.email,
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(suggestion)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Failed to save suggestion: {e}")
+        return jsonify({'error': "Couldn't send your suggestion. Please try again."}), 500
+    if SUGGESTION_EMAIL:
+        _email_suggestion(suggestion)
+    return jsonify({'status': 'sent'}), 201
+
+@app.route('/api/admin/suggestions', methods=['GET'])
+@jwt_required()
+def get_suggestions():
+    """All suggestions for admins: open ones first, newest first within each group."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    suggestions = Suggestion.query.order_by(Suggestion.done_at.isnot(None), Suggestion.created_at.desc()).all()
+    return jsonify([s.to_dict() for s in suggestions])
+
+@app.route('/api/admin/suggestions/<int:suggestion_id>', methods=['PUT'])
+@jwt_required()
+def update_suggestion(suggestion_id: int):
+    """Mark a suggestion as done, or back to open."""
+    if not _current_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    suggestion = Suggestion.query.get(suggestion_id)
+    if not suggestion:
+        return jsonify({'error': 'Suggestion not found'}), 404
+    done = (request.get_json(silent=True) or {}).get('done') is True
+    suggestion.done_at = datetime.utcnow() if done else None
+    db.session.commit()
+    return jsonify(suggestion.to_dict())
+
 @app.route('/api/users', methods=['GET'])
 @jwt_required()
 def get_users():
@@ -2042,6 +2131,8 @@ BERLIN = pytz.timezone('Europe/Berlin')
 WEEKLY_EMAIL_APPROVER = os.getenv('WEEKLY_EMAIL_APPROVER', 'gil.bnoon@gmail.com').strip().lower()
 # Gets the weekly list of low-scored articles after the scan
 SCAN_REVIEW_EMAIL = os.getenv('SCAN_REVIEW_EMAIL', WEEKLY_EMAIL_APPROVER).strip().lower()
+# Gets an email for each new note in the Suggestion Box
+SUGGESTION_EMAIL = os.getenv('SUGGESTION_EMAIL', WEEKLY_EMAIL_APPROVER).strip().lower()
 # The weekly email comes from Gil: her name, replies to her, and her address once the sending Gmail account
 # is allowed to "send mail as" it (set WEEKLY_EMAIL_FROM then; until then Gmail uses its own address)
 WEEKLY_EMAIL_FROM_NAME = os.getenv('WEEKLY_EMAIL_FROM_NAME', 'Gil from Internal Nerds')

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { localClient } from "@/api/localClient";
+import SuggestionsCard from "@/components/admin/SuggestionsCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,8 @@ export default function AdminDashboard() {
             Admin Access
           </Badge>
         </div>
+
+        <SuggestionsCard />
 
         {/* System Stats */}
         <Card className="mb-8">
