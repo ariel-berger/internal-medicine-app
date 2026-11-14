@@ -3,7 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import json
 import re
@@ -48,15 +48,20 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-string-ch
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 # Use persistent disk path if available (Render paid tier)
 persistent_data_path = os.getenv('PERSISTENT_DATA_PATH')
-if persistent_data_path:
-    # Use persistent disk for database - ensure absolute path
-    db_path = os.path.abspath(os.path.join(persistent_data_path, 'app.db'))
+database_url = os.getenv('DATABASE_URL')
+if persistent_data_path and (not database_url or database_url.startswith('sqlite')):
+    # A SQLite DATABASE_URL (e.g. sqlite:///app.db) would put users, library saves, key studies
+    # and comments on the server's temporary storage, which is wiped on every redeploy/restart,
+    # so with a persistent disk they always go there. The file name is new so an app.db left on
+    # the disk by an earlier setup (with an older table layout) is never picked up.
+    db_path = os.path.abspath(os.path.join(persistent_data_path, 'app_persistent.db'))
     # Ensure the directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{db_path}')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    print(f"User database: {db_path}")
 else:
     # Default to relative path (ephemeral on free tier)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///app.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
@@ -1281,12 +1286,26 @@ def create_user_study_status():
         if (not study_id and not article_id) or not status:
             return jsonify({'error': 'Either study_id or article_id, and status are required'}), 400
 
+        # A save restored from the browser's memory keeps the date it was first made,
+        # so it isn't counted as a new save (e.g. in Trending)
+        extra = {}
+        if data.get('created_date'):
+            try:
+                created_date = datetime.fromisoformat(str(data['created_date']).replace('Z', '+00:00'))
+                if created_date.tzinfo:
+                    created_date = created_date.astimezone(timezone.utc).replace(tzinfo=None)
+                if created_date < datetime.utcnow():
+                    extra['created_date'] = created_date
+            except ValueError:
+                pass
+
         record = UserStudyStatus(
             study_id=study_id,
             article_id=article_id,
             user_id=current_user_id,
             status=status,
             created_by=user.email,
+            **extra,
         )
         db.session.add(record)
         db.session.commit()

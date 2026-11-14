@@ -141,7 +141,9 @@ export default function Dashboard() {
             syncPromises.push(
               UserStudyStatus.create({ 
                 article_id: articleId, 
-                status: localStatus.status 
+                status: localStatus.status,
+                // Keep the original save date so a restored save doesn't count as new in Trending
+                created_date: localStatus.updatedAt
               }).catch(e => {
                 console.log(`Failed to sync article ${articleId} to backend:`, e);
                 return null;
