@@ -62,8 +62,7 @@ class MedicalArticlesService:
             # Search for articles in the specified date range
             pmids = client.search_articles_custom_date(journal_names, start_date, end_date)
 
-            # PubMed's publication date covers both the online (epub) and the print date, so an article
-            # matches once when it comes out online and again when it's printed. Skip ones we already have,
+            # Scan windows overlap, and articles can be added by hand. Skip ones we already have,
             # so they aren't scored again (and don't lose being hidden from the dashboard).
             with ArticleDatabase() as db:
                 existing_pmids = db.get_existing_pmids(pmids)
@@ -322,12 +321,15 @@ class MedicalArticlesService:
                             # Try just date format
                             latest_timestamp = datetime.strptime(latest_created_at_str.split()[0], '%Y-%m-%d')
                     
-                    # Extract the date from the timestamp and add one day to avoid duplicates
+                    # Start on the day of the last added article (not the day after), and look back at least
+                    # 2 weeks: articles added to PubMed later that day, or before an article added by hand
+                    # mid-week, would otherwise fall between scans. Ones we already have are skipped.
                     latest_date = latest_timestamp.date()
-                    start_date = datetime.combine(latest_date, datetime.min.time()) + timedelta(days=1)
+                    start_date = min(datetime.combine(latest_date, datetime.min.time()),
+                                     datetime.now() - timedelta(days=14))
                     end_date = datetime.now()
-                    
-                    # Format dates for the API (publication date range)
+
+                    # Format dates for the API (date added to PubMed)
                     start_date_str = start_date.strftime('%Y/%m/%d')
                     end_date_str = end_date.strftime('%Y/%m/%d')
                     

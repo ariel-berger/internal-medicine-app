@@ -42,7 +42,7 @@ def collect_articles_by_date_range(start_date: str, end_date: str, email: str = 
     # Search for articles in the specified date range
     pmids = client.search_articles_custom_date(journal_names, start_date, end_date)
 
-    # PubMed's publication date covers both the online and the print date, so skip articles we already have
+    # Skip articles we already have (overlapping date ranges, articles added by hand)
     with ArticleDatabase() as db:
         existing_pmids = db.get_existing_pmids(pmids)
     pmids = [pmid for pmid in pmids if pmid not in existing_pmids]

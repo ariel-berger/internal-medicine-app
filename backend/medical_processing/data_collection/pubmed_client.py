@@ -32,8 +32,9 @@ class PubMedClient:
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_back)
         
-        # Format dates for PubMed query
-        date_range = f"{start_date.strftime('%Y/%m/%d')}:{end_date.strftime('%Y/%m/%d')}[pdat]"
+        # By the date added to PubMed or the publication date (see search_articles_custom_date)
+        dates = f"{start_date.strftime('%Y/%m/%d')}:{end_date.strftime('%Y/%m/%d')}"
+        date_range = f"({dates}[edat] OR {dates}[pdat])"
         
         # Build journal query
         journal_query = " OR ".join([f'"{journal}"[journal]' for journal in journal_names])
@@ -45,7 +46,7 @@ class PubMedClient:
             **self.base_params,
             'db': 'pubmed',
             'term': search_query,
-            'retmax': ARTICLES_PER_BATCH * 10,  # Get more to ensure we have enough
+            'retmax': 10000,  # PubMed's maximum; a 2-week window is ~1,500 articles
             'retmode': 'xml'
         }
         
@@ -71,8 +72,12 @@ class PubMedClient:
     
     def search_articles_custom_date(self, journal_names: List[str], start_date: str, end_date: str) -> List[str]:
         """Search for article PMIDs from specified journals within a custom date range."""
-        # Format dates for PubMed query (expects YYYY/MM/DD format)
-        date_range = f"{start_date}:{end_date}[pdat]"
+        # Format dates for PubMed query (expects YYYY/MM/DD format).
+        # Mainly by the date the article was added to PubMed ([edat]): articles reach PubMed a few days
+        # after coming out online, so searching only by publication date ([pdat]) missed ones published
+        # just before a scan until their print date months later. [pdat] still catches, at print, ones
+        # skipped online for having no abstract yet. Articles we already have are skipped by the caller.
+        date_range = f"({start_date}:{end_date}[edat] OR {start_date}:{end_date}[pdat])"
         
         # Build journal query
         journal_query = " OR ".join([f'"{journal}"[journal]' for journal in journal_names])
@@ -84,7 +89,7 @@ class PubMedClient:
             **self.base_params,
             'db': 'pubmed',
             'term': search_query,
-            'retmax': ARTICLES_PER_BATCH * 10,  # Get more to ensure we have enough
+            'retmax': 10000,  # PubMed's maximum; a 2-week window is ~1,500 articles
             'retmode': 'xml'
         }
         
